@@ -1,0 +1,3 @@
+[submodule "tests/Incompact3d"]
+	path = tests/Incompact3d
+	url = https://github.com/mattfalcone1997/Incompact3d.git
