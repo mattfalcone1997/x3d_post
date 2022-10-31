@@ -14,6 +14,12 @@ class meta_x3d(Common):
     def from_hdf(cls,fn,key=None):
         return cls(fn,from_hdf=True,key=key)
 
+    @property
+    def coorddata(self):
+        return fp.AxisData(fp.GeomHandler(self.metaDF['itype']),
+                            self.CoordDF,
+                            coord_nd=None)
+
     def _meta_extract(self,path):
         params = read_parameters(path)
         coords = {'x' : np.array(params['mesh']['xcoords']),
@@ -34,7 +40,12 @@ class meta_x3d(Common):
                            itype=itype,
                            istatcalc=params.get('istatcalc'),
                            initstat=params.get('initstat'))
+
+        self._meta_hook(params)
         
+    def _meta_hook(self,params):
+        pass
+    
     def _hdf_extract(self,fn, key=None):
         key = self._get_hdf_key(key)
 

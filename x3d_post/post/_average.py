@@ -15,10 +15,13 @@ from functools import partial
 from abc import ABC, abstractmethod, abstractproperty
 
 from ._meta import meta_x3d
-from ._common import CommonData
+from ._common import (CommonData,
+                      CommonTemporalData)
 import flowpy as fp
 from ._data_handlers import (stat_z_handler,
-                             stat_xz_handler)
+                             stat_xz_handler,
+                             stat_xzt_handler)
+
 from flowpy.plotting import (update_subplots_kw,
                              create_fig_ax_with_squeeze,
                              update_line_kw,
@@ -165,7 +168,7 @@ class _AVG_developing(_AVG_base):
         mom_thickness = 0.5*integrate_simps(theta_integrand,y_coords,axis=0)
         disp_thickness = 0.5*integrate_simps(delta_integrand,y_coords,axis=0)
         shape_factor = disp_thickness/mom_thickness
-        
+        # print(mom_thickness,disp_thickness,shape_factor)
         return disp_thickness, mom_thickness, shape_factor
 
     def _velo_scale_calc(self,PhyTime):
@@ -388,8 +391,8 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         x_index = self.CoordDF.index_calc('x',x_val)[0]
         
 
-        x_transform = lambda y:  y/delta_v[x_index]
-        y_transform = lambda u: u/u_tau[x_index]
+        x_transform = lambda y:  y[1:]/delta_v[x_index] if isinstance(y,np.ndarray) else y/delta_v[x_index]
+        y_transform = lambda u: u[1:]/u_tau[x_index] if isinstance(u,np.ndarray) else u/u_tau[x_index]
         
         return x_transform, y_transform
     
@@ -400,13 +403,14 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         x_vals = self.CoordDF.get_true_coords('x',x_vals)
 
         for x in x_vals:
-            label = self.Domain.create_label(r"$x = %.3g$"%x)
+            labels = [self.Domain.create_label(r"$x = %.3g$"%x)] \
+                            if 'label' not in line_kw else None
             x_transform, y_transform = self._get_uplus_yplus_transforms(PhyTime, x)
             fig, ax = self.mean_data.plot_line('u','y',
                                                 x,
                                                 transform_xdata = x_transform,
                                                 transform_ydata = y_transform,
-                                                labels=[label],
+                                                labels=labels,
                                                 channel_half=True,
                                                 time=PhyTime,
                                                 fig=fig,
@@ -427,7 +431,23 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
 
         return fig, ax
 
-    def plot_Reynolds(self,comp,x_vals,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+    def _get_uuplus_yplus_transforms(self,PhyTime,x_val,y_transform):
+        u_tau, delta_v = self.wall_unit_calc(PhyTime)
+        x_index = self.CoordDF.index_calc('x',x_val)[0]
+        
+        x_transform = lambda y:  y[1:]/delta_v[x_index] if isinstance(y,np.ndarray) else y/delta_v[x_index]
+        if y_transform is None:
+            y_transform = lambda u: u[1:]/(u_tau[x_index]*u_tau[x_index]) \
+                          if isinstance(u,np.ndarray) \
+                          else u/(u_tau[x_index]*u_tau[x_index])
+        else:
+            y_transform = lambda u: u[1:]/(u_tau[x_index]*u_tau[x_index]) \
+                          if isinstance(u,np.ndarray) \
+                          else u/(u_tau[x_index]*u_tau[x_index])
+                          
+        return x_transform, y_transform
+    
+    def plot_Reynolds(self,comp,x_vals,wall_units=False,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
         comp = ''.join(sorted(comp))
         if comp not in self.uu_data.inner_index:
             raise ValueError("Reynolds stress component %s not found"%comp) 
@@ -436,24 +456,41 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         x_vals = check_list_vals(x_vals)
         x_vals = self.CoordDF.get_true_coords('x',x_vals)
 
-        labels = [self.Domain.create_label(r"$x = %.3g$"%x) for x in x_vals]
-
         if comp == 'uv':
             transform_y = lambda x: -1.*x
         else:
             transform_y = None
 
-        fig, ax = self.uu_data.plot_line(comp,'y',x_vals,time=PhyTime,labels=labels,fig=fig,channel_half=True,
-                                    transform_ydata=transform_y, ax=ax,line_kw=line_kw,**kwargs)
+        for x in x_vals:
+            if wall_units:
+                transform_x, transform_y = self._get_uuplus_yplus_transforms(PhyTime,
+                                                                            x,
+                                                                            transform_y)
+            else:
+                transform_x = None
+            
+            
+            labels = [self.Domain.create_label(r"$x = %.3g$"%x)] 
+            if line_kw is not None:
+                if 'label' in line_kw:
+                    labels = None
+                    
+            fig, ax = self.uu_data.plot_line(comp,'y',x,time=PhyTime,labels=labels,
+                                             fig=fig,channel_half=True,
+                                             transform_ydata=transform_y,
+                                             transform_xdata=transform_x,
+                                             ax=ax,line_kw=line_kw,**kwargs)
 
         sign = "-" if comp == 'uv' else ""
 
         uu_label = self.Domain.create_label(r"%s'%s'"%tuple(comp))
         avg_label = self.Domain.avgStyle(uu_label)
         y_label = r"$%s %s$"%(sign,avg_label)
-
         x_label = self.Domain.create_label(r"$y$")
-
+        
+        if wall_units:
+            y_label = "$%s^+$"%y_label
+            x_label = "$y^+$"
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         
@@ -559,8 +596,8 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
 
         self._meta_data = self._module._meta_class.from_hdf(fn,key=key+'/meta_data')
 
-        self.mean_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/mean_data')
-        self.uu_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/uu_data')
+        self.mean_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/mean_data')
+        self.uu_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/uu_data')
 
         return fp.hdfHandler(fn,'r',key=key)
 
@@ -675,8 +712,8 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
     def _get_uplus_yplus_transforms(self,PhyTime):
         u_tau, delta_v = self.wall_unit_calc(PhyTime)
         
-        x_transform = lambda y:  y/delta_v
-        y_transform = lambda u: u/u_tau
+        x_transform = lambda y:  y[1:]/delta_v if isinstance(y,np.ndarray) else y/delta_v
+        y_transform = lambda u: u[1:]/u_tau if isinstance(u,np.ndarray) else u/u_tau
         
         return x_transform, y_transform        
 
@@ -699,6 +736,7 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
 
         if plot_sublayer:
             u = np.amax(self.mean_data[PhyTime,'u'])
+
             u_plus_array = np.linspace(0,u_plus_trans(u),100)
             ax.cplot(u_plus_array,u_plus_array,
                      label=r"$\bar{u}^+=y^+$",
@@ -713,7 +751,17 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
 
         return fig, ax        
 
-    def plot_Reynolds(self,comp,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+    def _get_uuplus_y_plus_transforms(self,PhyTime,y_transform):
+        u_tau, delta_v = self.wall_unit_calc(PhyTime)
+        
+        x_transform = lambda y:  y[1:]/delta_v if isinstance(y,np.ndarray) else y/delta_v
+        if y_transform is None:
+            y_transform = lambda u: u[1:]/(u_tau*u_tau) if isinstance(u,np.ndarray) else u/(u_tau*u_tau)
+        else:
+            y_transform = lambda u: y_transform(u[1:])/(u_tau*u_tau) if isinstance(u,np.ndarray) else u/(u_tau*u_tau)
+        return x_transform, y_transform  
+
+    def plot_Reynolds(self,comp,wall_units=False,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
         
         comp = ''.join(sorted(comp))
         if comp not in self.uu_data.inner_index:
@@ -727,19 +775,31 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         else:
             transform_y = None
 
+        if wall_units:
+            transform_x, transform_y = self._get_uuplus_y_plus_transforms(PhyTime,
+                                                    transform_y)
+        else:
+            transform_x = None
+            
         fig, ax = self.uu_data.plot_line(comp,time=PhyTime,fig=fig,channel_half=True,
                                     transform_ydata=transform_y,
+                                    transform_xdata=transform_x,
                                     ax=ax,line_kw=line_kw,**kwargs)
-    
+
         sign = "-" if comp == 'uv' else ""
 
 
         uu_label = self.Domain.create_label(r"%s'%s'"%tuple(comp))
         avg_label = self.Domain.avgStyle(uu_label)
-        y_label = r"$%s %s$"%(sign,avg_label)
 
         x_label = self.Domain.create_label(r"$y$")
-
+        if wall_units:
+            ax.set_xscale('log')
+            y_label = "$%s%s^+$"%(sign,avg_label)
+            x_label = "$y^+$"
+        else:
+            y_label = r"$%s %s$"%(sign,avg_label)
+            
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         
@@ -762,3 +822,342 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
 
         ax.set_xlim([-1,-0.1])
         return fig, ax        
+    
+    
+class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData):
+
+    @classmethod
+    def from_phase_average(cls,paths,its=None,*args,**kwargs):
+        its_list = cls._get_its_phase(paths,its=its)
+        avg_list = []
+        for path,its in zip(paths,its_list):
+            avg = cls(path,its=its,*args,**kwargs)
+            
+            avg._test_times_shift(path)
+            avg_list.append(avg)
+            
+        return cls.phase_average(*avg_list)
+                
+
+    def _extract_avg(self,path,its=None):
+        super()._extract_avg(its,path,None)
+    
+    def _hdf_extract(self, fn,key=None):
+        key = self._get_hdf_key(key)
+
+        self._meta_data = self._module._meta_class.from_hdf(fn,key=key+'/meta_data')
+
+        self.mean_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/mean_data')
+        self.uu_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/uu_data')
+
+        return fp.hdfHandler(fn,'r',key=key)
+
+    def _return_index(self,PhyTime):
+        if not isinstance(PhyTime,str):
+            PhyTime = "{:.9g}".format(PhyTime)
+
+        if PhyTime not in self.get_times():
+            raise ValueError("time %s must be in times"% PhyTime)
+        for i in range(len(self.get_times())):
+            if PhyTime==self.get_times()[i]:
+                return i
+            
+    def _return_xaxis(self):
+        return self.times
+    
+    def wall_unit_calc(self,PhyTime=None):
+        """
+        returns arrays for the friction velocity and viscous lengthscale
+
+
+        Returns
+        -------
+        %(ndarray)s
+            friction velocity array
+        %(ndarray)s
+            viscous lengthscale array
+        """
+        if PhyTime is None:
+            return self._wall_unit_calc(None)
+        else:
+            return super().wall_unit_calc(PhyTime)
+        
+    def int_thickness_calc(self,PhyTime=None):
+        """
+        Calculates the integral thicknesses and shape factor 
+
+        Returns
+        -------
+        %(ndarray)s:
+            Displacement thickness
+        %(ndarray)s:
+            Momentum thickness
+        %(ndarray)s:
+            Shape factor
+        """
+
+        if PhyTime is None:
+            return self._int_thickness_calc(None)
+        else:
+            return super().int_thickness_calc(PhyTime)
+
+    def Wall_Coords(self,axis_val,PhyTime=None):
+        _, delta_v = self.wall_unit_calc(PhyTime)
+        index = self._return_index(axis_val)
+        return  self.CoordDF / delta_v[index]
+
+    def get_coords_wall_units(self,comp,coords,axis_val,PhyTime=None):
+        indices = self.Wall_Coords(axis_val,PhyTime).index_calc(comp,coords)
+        return self.CoordDF[comp][indices]            
+    
+    def plot_shape_factor(self,fig=None,ax=None,line_kw=None,**kwargs):
+        """
+        Plots the shape factor from the class against the streamwise coordinate
+
+        Parameters
+        ----------
+        fig : %(fig)s, optional
+            Pre-existing figure, by default None
+        ax : %(ax)s, optional
+            Pre-existing axes, by default None
+        line_kw : dict, optional
+            keyword arguments to be passed to the plot method, by default None
+
+        Returns
+        -------
+        %(fig)s, %(ax)s
+            output figure and axes objects
+        """
+
+        _,_, H = self.int_thickness_calc(None)
+
+        kwargs = update_subplots_kw(kwargs,figsize=[7,5])
+        fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+
+        times = self.times
+
+        line_kw = update_line_kw(line_kw,label=r"$H$")
+        ax.cplot(times,H,**line_kw)
+
+        ax.set_xlabel(r"$%s$"% self.Domain.timeStyle)
+        ax.set_ylabel(r"$H$")
+        
+        return fig, ax    
+    
+    def plot_disp_thickness(self,fig=None,ax=None,line_kw=None,**kwargs):
+        """
+        Plots the displacement thickness from the class against the streamwise coordinate
+
+        Parameters
+        ----------
+        fig : %(fig)s, optional
+            Pre-existing figure, by default None
+        ax : %(ax)s, optional
+            Pre-existing axes, by default None
+        line_kw : dict, optional
+            keyword arguments to be passed to the plot method, by default None
+
+        Returns
+        -------
+        %(fig)s, %(ax)s
+            output figure and axes objects
+        """
+
+        delta,_, _ = self.int_thickness_calc(None)
+
+        kwargs = update_subplots_kw(kwargs,figsize=[7,5])
+        fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+
+        times = self.times
+
+        line_kw = update_line_kw(line_kw,label=r"$\delta^*$")
+        ax.cplot(times,delta,**line_kw)
+
+        time_label = self.Domain.timeStyle
+        ax.set_xlabel(r"$%s$"%time_label)
+
+        ax.set_ylabel(r"$\delta^*$")
+        
+        return fig, ax
+    
+    def plot_mom_thickness(self,fig=None,ax=None,line_kw=None,**kwargs):
+        """
+        Plots the momentum thickness from the class against the streamwise coordinate
+
+        Parameters
+        ----------
+        fig : %(fig)s, optional
+            Pre-existing figure, by default None
+        ax : %(ax)s, optional
+            Pre-existing axes, by default None
+        line_kw : dict, optional
+            keyword arguments to be passed to the plot method, by default None
+
+        Returns
+        -------
+        %(fig)s, %(ax)s
+            output figure and axes objects
+        """
+
+        _,theta, _ = self.int_thickness_calc(None)
+
+        kwargs = update_subplots_kw(kwargs,figsize=[7,5])
+        fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+
+        times = self.times
+
+        line_kw = update_line_kw(line_kw,label=r"$\theta$")
+        ax.cplot(times,theta,**line_kw)
+
+        time_label = self.Domain.timeStyle
+        ax.set_xlabel(r"$%s$"%time_label)
+
+        ax.set_ylabel(r"$\theta$")
+        
+        return fig, ax
+    
+    def velo_scale_calc(self,PhyTime=None):
+        """
+        Method to calculate the bulk velocity against the streamwise coordinate
+        
+        Returns
+        -------
+        %(ndarray)s
+            array containing the bulk velocity
+        """
+        if PhyTime is None:
+            return self._velo_scale_calc(None)
+        else:
+            return super().velo_scale_calc(PhyTime)
+        
+    bulk_velo_calc = velo_scale_calc
+    def plot_bulk_velocity(self,fig=None,ax=None,line_kw=None,**kwargs):
+    
+        bulk_velo = self.bulk_velo_calc(None)
+
+        kwargs = update_subplots_kw(kwargs,figsize=[7,5])
+        fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+
+        times = self.times
+        line_kw = update_line_kw(line_kw,label=r"$U_{b0}$")
+
+        ax.cplot(times,bulk_velo,**line_kw)
+        ax.set_ylabel(r"$U_b^*$")
+        
+        time_label = self.Domain.timeStyle
+        ax.set_xlabel(r"$%s$"%time_label)
+
+        return fig, ax        
+    
+    def tau_calc(self,PhyTime=None):
+        """
+        method to return the wall shear stress array
+
+        Returns
+        -------
+        %(ndarray)s
+            Wall shear stress array 
+        """
+        if PhyTime is None:
+            return self._tau_calc(None)
+        else:
+            return super().tau_calc(PhyTime)
+        
+    def plot_skin_friction(self,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+    
+        skin_friction = self._Cf_calc(PhyTime)
+        times = self.times
+
+        kwargs = update_subplots_kw(kwargs,figsize=[7,5])
+        fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+        
+        line_kw = update_line_kw(line_kw,label=r"$C_f$")
+        ax.cplot(times,skin_friction,**line_kw)
+
+        ax.set_ylabel(r"$C_f$")
+
+        time_label = self.Domain.timeStyle
+        ax.set_xlabel(r"$%s$"%time_label)
+
+        return fig, ax
+    
+    def plot_mean_flow(self,comp,PhyTimes,fig=None,ax=None,line_kw=None,**kwargs):
+        line_kw = update_line_kw(line_kw)
+
+        for time in PhyTimes:
+
+            time_label = self.Domain.timeStyle
+            line_kw['label'] = r"$%s = %.3g$"%(time_label,time)
+
+            fig, ax = super().plot_mean_flow(comp,time,fig=fig,ax=ax,line_kw=line_kw,**kwargs)
+        
+        return fig, ax
+    
+    def plot_flow_wall_units(self,PhyTimes,fig=None,ax=None,line_kw=None,plot_sublayer=True,**kwargs):
+        line_kw = update_line_kw(line_kw)
+
+        for time in PhyTimes:
+            
+            time_label = self.Domain.timeStyle
+            line_kw['label'] = r"$%s = %.3g$"%(time_label,time)
+            
+            sublayer = True if time == PhyTimes[-1] and plot_sublayer else False
+            fig, ax = super().plot_flow_wall_units(time,
+                                                   fig=fig,
+                                                   ax=ax,
+                                                   line_kw=line_kw,
+                                                   plot_sublayer=sublayer,
+                                                   **kwargs)
+        
+        return fig, ax
+    
+    def plot_Reynolds(self,comp,PhyTimes,fig=None,ax=None,line_kw=None,**kwargs):
+        line_kw = update_line_kw(line_kw)
+        for time in PhyTimes:
+            
+            time_label = self.Domain.timeStyle
+            line_kw['label'] = r"$%s = %.3g$"%(time_label,time)
+
+            fig, ax = super().plot_Reynolds(comp,PhyTime=time,fig=fig,ax=ax,line_kw=line_kw,**kwargs)
+        
+        return fig, ax
+    
+    def plot_eddy_visc(self,PhyTimes,fig=None,ax=None,line_kw=None,**kwargs):
+    
+        line_kw = update_line_kw(line_kw)
+        for time in PhyTimes:
+            time_label = self.Domain.timeStyle
+            line_kw['label'] = r"$%s = %.3g$"%(time_label,time)
+
+            fig, ax = super().plot_eddy_visc(time,fig=fig,ax=ax,line_kw=line_kw,**kwargs)
+        
+        return fig, ax
+    
+    def plot_Reynolds_x(self,comp,y_vals_list,y_mode='half-channel',fig=None,ax=None,line_kw=None,**kwargs):
+        
+        comp = ''.join(sorted(comp))
+        if comp not in self.uu_data.inner_index:
+            raise ValueError("Reynolds stress component %s not found"%comp) 
+
+
+        uu_label = self.Domain.create_label(r"%s'%s'"%tuple(comp))
+        avg_label = self.Domain.AVGStyle(uu_label)
+
+        line_kw = update_line_kw(line_kw)
+        if y_vals_list == 'max':
+            line_kw['label'] = r"$%s_{max}$"%avg_label
+            
+            fig, ax = self.uu_data.plot_line_time_max(comp,fig=fig,ax=ax,line_kw=line_kw,**kwargs)
+        else:
+            msg = "This method needs to be reimplemented only max can currently be used"
+            raise NotImplementedError(msg)
+
+        ax.set_ylabel(r"$%s$"%avg_label)
+
+            
+        time_label = self.Domain.timeStyle
+        ax.set_xlabel(r"$%s$"%time_label)
+
+        return fig, ax    
+    
+_avg_xzt_class = x3d_avg_xzt

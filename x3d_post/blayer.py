@@ -156,11 +156,7 @@ class x3d_avg_z(xp.x3d_avg_z):
 _avg_z_class = x3d_avg_z
 
 class meta_x3d(xp.meta_x3d):
-    def _meta_extract(self, path):
-        super()._meta_extract(path)
-
-        params = read_parameters(path)
-
+    def _meta_hook(self, params):
         self.u_infty = params["tbl_recy"]["u_infty"]
 
     def save_hdf(self, fn, mode, key=None):
@@ -189,3 +185,6 @@ class x3d_fluct_z(xp.x3d_fluct_z):
     pass
 
 _fluct_z_class = x3d_fluct_z
+
+class x3d_budget_z(xp.x3d_budget_z):
+    pass

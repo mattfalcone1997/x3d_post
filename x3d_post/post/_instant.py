@@ -15,8 +15,11 @@ import itertools
 import warnings            
 import matplotlib as mpl          
 import logging
-from ._average import x3d_avg_z
+from ._average import x3d_avg_z, x3d_avg_xz, x3d_avg_xzt
+
 _avg_z_class = x3d_avg_z
+_avg_xz_class =x3d_avg_xz
+_avg_xzt_class = x3d_avg_xzt
 
 from ._meta import meta_x3d
 _meta_class=meta_x3d
@@ -102,7 +105,7 @@ class _Inst_base(CommonData,inst_reader,ABC):
 
         self.inst_data = self._extract_inst_xdmf(it,path,self._comps)
 
-        self._avg_data = self._create_avg_data(path,it0,avg_data=avg_data)
+        self._avg_data = self._create_avg_data(it,path,it0,avg_data=avg_data)
 
         self._update_instant()
         
@@ -588,12 +591,13 @@ class _Inst_base(CommonData,inst_reader,ABC):
 
         plane, coord = VorticityDF.CoordDF.check_plane(plane)
 
-        if coord == 'y':
+        if coord == 'y' and self._avg_available:
             axis_vals = self._avg_data.ycoords_from_coords(axis_vals,inst_time=PhyTime,mode=y_mode)[0]
             int_vals = self._avg_data.ycoords_from_norm_coords(axis_vals,inst_time=PhyTime,mode=y_mode)[0]
         else:
             int_vals = axis_vals = self.CoordDF.get_true_coords(coord,axis_vals)
-
+            y_mode = 'half-channel'
+            
         x_size, z_size = VorticityDF.get_unit_figsize(plane)
         figsize=[x_size,z_size*len(axis_vals)]
 
@@ -634,15 +638,57 @@ class _Inst_base(CommonData,inst_reader,ABC):
         return self
 
 class x3d_inst_z(_Inst_base):
-    _tgpost = False 
     
     @classproperty
     def _avg_class(cls):
         return cls._module._avg_z_class
     
-    def _create_avg_data(self,path,it0,avg_data=None):
+    def _create_avg_data(self,it,path,it0,avg_data=None):
         it = max_iteration(path)
         if avg_data is not None :
             return avg_data
         else:
-            return self._module._avg_z_class(it,path,it0=it0)
+            if self._module._avg_z_class.avg_avail(it,path):
+                self._avg_available = True
+                return self._module._avg_z_class(it,path,
+                                                 it0=it0)
+                
+            else:
+                warnings.warn("No average available")
+                self._avg_available = False
+                
+class x3d_inst_xz(_Inst_base):
+    @classproperty
+    def _avg_class(cls):
+        return cls._module._avg_z_class
+    
+    def _create_avg_data(self,it,path,it0,avg_data=None):
+        it = max_iteration(path)
+        if avg_data is not None :
+            return avg_data
+        else:
+            if self._module._avg_xz_class.avg_avail(it,path):
+                self._avg_available = True
+                return self._module._avg_xz_class(it,path,
+                                                 it0=it0)
+                
+            else:
+                warnings.warn("No average available")
+                self._avg_available = False
+
+class x3d_inst_xzt(_Inst_base):
+    @classproperty
+    def _avg_class(cls):
+        return cls._module._avg_xzt_class                    
+    
+    def _create_avg_data(self,it,path,it0,avg_data=None):
+        if avg_data is not None :
+            return avg_data
+        else:
+            if self._avg_class.avg_avail(it,path):
+                self._avg_available = True
+                return self._avg_class(path,its=[it])
+                
+            else:
+                warnings.warn("No average available")
+                self._avg_available = False

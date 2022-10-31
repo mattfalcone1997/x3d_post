@@ -16,11 +16,18 @@ def check_path(path,statistics=False,data=False):
     if data and not os.path.isdir(data_path):
         raise FileNotFoundError(f"Path {data_path} does not exist")
 
-def max_iteration(path):
-    check_path(path,statistics=True)
-
-    stat_path = os.path.join(path,'statistics')
-
-    files = os.listdir(stat_path)
-    its = sorted(set([int(x[-7:]) for x in files]))
-    return its[-1]
+def get_iterations(path,statistics=False):
+    data = ~statistics
+    check_path(path,statistics=statistics,data=data)
+    
+    if statistics:
+        stat_path = os.path.join(path,'statistics')
+        files = os.listdir(stat_path)
+        return sorted(set([int(x[-7:]) for x in files]))
+    else:
+        stat_path = os.path.join(path,'data')
+        files = os.listdir(stat_path)
+        return sorted(set([int(x[-12:-5]) for x in files]))
+    
+def max_iteration(path,statistics=False):
+    return get_iterations(path,statistics=statistics)[-1]

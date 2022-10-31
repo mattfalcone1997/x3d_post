@@ -1,7 +1,10 @@
 import numpy as np
-from ._data_handlers import stat_z_handler
+from ._data_handlers import (stat_z_handler, 
+                             stat_xz_handler,
+                             stat_xzt_handler)
+
 from ._common import CommonData, classproperty
-from ._average import x3d_avg_z
+from ._average import x3d_avg_z, x3d_avg_xz, x3d_avg_xzt
 
 import flowpy as fp
 from flowpy.utils import check_list_vals
@@ -14,7 +17,7 @@ from flowpy.plotting import (update_subplots_kw,
 from flowpy.gradient import Scalar_laplacian
 from abc import ABC, abstractmethod, abstractproperty
 import matplotlib as mpl
-
+from itertools import chain
 class budgetBase(CommonData,ABC):   
 
     def __init__(self,*args,from_hdf=False,**kwargs):
@@ -333,7 +336,6 @@ class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
             budget_scale = u_tau**3/delta_v
 
         def _x_Transform(data):
-
             return (data.copy())/delta_v[x_index]
 
 
@@ -412,4 +414,288 @@ class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
 
         ax.set_xlabel(r"$x/\delta$")        
 
-        return fig, ax        
+        return fig, ax     
+        
+_avg_xz_class = x3d_avg_xz
+class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
+    _flowstruct_class = fp.FlowStruct1D
+
+    @classproperty
+    def _get_avg_data(self):
+        return self._module._avg_xz_class
+
+    def _get_stat_data(self,it, path, it0):
+        
+        self.mean_data = self.avg_data.mean_data
+        self.uu_data = self.avg_data.uu_data
+
+        self.uuu_data = self._extract_uuumean(path,it, it0)
+        self.dudx_data = self._extract_dudxmean(path,it, it0)
+        self.pu_data = self._extract_pumean( path,it, it0)
+        self.pdudx_data = self._extract_pdudxmean(path, it, it0)
+        self.dudx2_data = self._extract_dudx2mean(path, it, it0)
+
+    def _del_stat_data(self):
+        del self.mean_data
+        del self.uu_data
+        del self.uuu_data
+        del self.dudx_data
+        del self.pu_data
+        del self.pdudx_data
+        del self.dudx2_data
+
+    def _advection_extract(self,comp):
+    
+        uu = self.avg_data.uu_data[comp]
+        V_mean = self.avg_data.mean_data['v']
+
+        uu_dy = self.Domain.Grad_calc(self.avg_data.CoordDF,uu,'y')
+
+        advection = -V_mean*uu_dy
+        return advection        
+
+    def _turb_transport(self,comp):
+        uu_comp = comp+'v'
+        uu_comp = ''.join(sorted(uu_comp))        
+
+        u1u2v = self.uuu_data[uu_comp]
+        return -self.Domain.Grad_calc(self.CoordDF,u1u2v,'y')
+        
+    def _pressure_strain(self,comp):
+        u1u2 = 'pd' + comp[0] + 'd'+ chr(ord(comp[1])-ord('u')+ord('x'))
+        u2u1 = 'pd' + comp[1] + 'd'+ chr(ord(comp[0])-ord('u')+ord('x'))
+
+        rho_star = 1.0
+        pdu1dx2 = self.pdudx_data[u1u2]
+        pdu2dx1 = self.pdudx_data[u2u1]
+
+        pressure_strain = (1/rho_star)*(pdu1dx2 + pdu2dx1) 
+        return pressure_strain        
+
+    def _pressure_diffusion(self,comp):
+        comp1, comp2 = sorted(comp)
+
+        if comp1 == 'w' and comp2 == 'w':
+            return np.zeros(self.shape)
+
+        diff1 = chr(ord(comp1)-ord('u')+ord('x'))
+        diff2 = chr(ord(comp2)-ord('u')+ord('x'))
+
+        pu1 = self.pu_data['p'+comp1]
+        pu2 = self.pu_data['p'+comp2]
+
+        rho_star = 1.0
+
+        if diff1 == 'y':
+            pu1_grad = self.Domain.Grad_calc(self.avg_data.CoordDF,pu1,diff1)
+        else:
+            pu1_grad = np.zeros_like(pu1)
+
+        if diff2 == 'y':
+            pu2_grad = self.Domain.Grad_calc(self.avg_data.CoordDF,pu2,diff2)
+        else:
+            pu2_grad = np.zeros_like(pu1)
+
+        pressure_diff = -(1/rho_star)*(pu1_grad + pu2_grad)
+        return pressure_diff        
+
+    def _viscous_diff(self,comp):
+        u1u2 = self.uu_data[comp]
+
+        re = self.metaDF['re']
+        duu_dy = self.Domain.Grad_calc(self.avg_data.CoordDF,u1u2,'y')
+        duu_dy2= self.Domain.Grad_calc(self.avg_data.CoordDF,duu_dy,'y')
+        return (1/re)*duu_dy2
+
+    def _production_extract(self,comp):
+        comp1, comp2 = sorted(comp)
+
+        U1U_comp = ''.join(sorted(comp1 + 'u'))
+        U2U_comp = ''.join(sorted(comp2 + 'u'))
+        U1V_comp = ''.join(sorted(comp1 + 'v'))
+        U2V_comp = ''.join(sorted(comp2 + 'v'))
+        
+        u1u = self.uu_data[U1U_comp]
+        u2u = self.uu_data[U2U_comp]
+        u1v = self.uu_data[U1V_comp]
+        u2v = self.uu_data[U2V_comp]
+
+        U1x_comp = 'd' + comp1 + 'd' +  'x'
+        U2x_comp = 'd' + comp2 + 'd' + 'x'
+        U1y_comp = 'd' + comp1 + 'd' + 'y'
+        U2y_comp = 'd' + comp2 + 'd' + 'y'
+        
+        du1dx = self.dudx_data[U1x_comp]
+        du2dx = self.dudx_data[U2x_comp]
+        du1dy = self.dudx_data[U1y_comp]
+        du2dy = self.dudx_data[U2y_comp]
+
+        production = -(u1u*du2dx + u2u*du1dx + u1v*du2dy + u2v*du1dy)
+        return production            
+
+    def _dissipation_extract(self,comp):
+        comp1, comp2 = comp
+
+        dU1dxdU2dx_comp = 'd'+ comp1 + 'dx' + 'd' + comp2 + 'dx'
+        dU1dydU2dy_comp = 'd'+ comp1 + 'dy' + 'd' + comp2 + 'dy'
+        
+        du1dxdu2dx = self.dudx2_data[dU1dxdU2dx_comp]
+        du1dydu2dy = self.dudx2_data[dU1dydU2dy_comp]
+
+        re = self.avg_data.metaDF['re']
+        dissipation = -(2/re)*(du1dxdu2dx + du1dydu2dy)
+        return dissipation        
+
+    def _wallunit_generator(self,PhyTime,wall_units):
+    
+        if wall_units:
+            u_tau, delta_v = self.avg_data.wall_unit_calc(PhyTime)
+            budget_scale = u_tau**3/delta_v
+
+        def _x_Transform(data):
+            return data.copy()/delta_v
+
+        def _y_Transform(data):
+            return data/budget_scale
+
+        if wall_units:
+            return _x_Transform, _y_Transform
+        else:
+            return None, None        
+
+    def plot_budget(self, PhyTime=None,budget_terms=None, wall_units=True,fig=None, ax =None,line_kw=None,**kwargs):
+        PhyTime = self.avg_data.check_PhyTime(PhyTime)
+        fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+        budget_terms = self._check_terms(budget_terms)
+        line_kw= update_line_kw(line_kw)
+
+        y_plus, budget_scale = self._wallunit_generator(PhyTime,wall_units)
+
+        for comp in budget_terms:
+                
+            line_kw['label'] = self.title_with_math(comp)
+            fig, ax = self.budget_data.plot_line(comp,time=PhyTime,
+                                                transform_xdata=y_plus,
+                                                transform_ydata=budget_scale,
+                                                channel_half=True,
+                                                fig=fig,ax=ax,line_kw=line_kw)
+
+        if mpl.rcParams['text.usetex'] == True:
+            ax.set_ylabel(r"Loss\ \ \ \ \ \ \ \ Gain")
+        else:
+            ax.set_ylabel(r"Loss        Gain")
+
+        if wall_units:
+            ax.set_xscale('log')
+            ax.set_xlabel(r"$y^+$")
+
+        else:
+            x_label = self.Domain.create_label(r"$y$")
+            ax.set_xlabel(x_label)
+
+        return fig, ax            
+    
+    
+_avg_xzt_class = x3d_avg_xzt
+class x3d_budget_xzt(x3d_budget_xz,stat_xzt_handler):
+    _flowstruct_class = fp.FlowStruct1D_time
+    @classproperty
+    def _get_avg_data(self):
+        return self._module._avg_xzt_class
+    
+    def _budget_init(self, comp, path, its=None):
+            
+        self.avg_data = self._get_avg_data(path,its=its)
+        
+        self._get_stat_data(its,path)
+
+        self.budget_data = self._budget_extract(comp)
+
+        self._del_stat_data()
+        
+    def _budget_extract(self,comp):
+        
+        transient = self._transient_extract(comp).T
+        production = self._production_extract(comp).T
+        advection = self._advection_extract(comp).T
+        turb_transport = self._turb_transport(comp).T
+        pressure_diffusion = self._pressure_diffusion(comp).T
+        pressure_strain = self._pressure_strain(comp).T
+        viscous_diff = self._viscous_diff(comp).T
+        dissipation = self._dissipation_extract(comp).T
+    
+        array_concat = [transient,production,advection,turb_transport,pressure_diffusion,\
+                        pressure_strain,viscous_diff,dissipation]
+
+        budget_array = np.concatenate(array_concat,axis=0)
+        
+        comps = ['transient','production','advection','turbulent transport','pressure diffusion',\
+                     'pressure strain','viscous diffusion','dissipation']  
+        
+        times = self.avg_data.times
+        comps = [[x]*len(times) for x in comps]        
+        index = [list(times)*len(comps),list(chain(*comps))]
+        
+        budget_data = self._flowstruct_class(self._coorddata,
+                                        budget_array,
+                                        index =index)
+        
+        return budget_data
+            
+    def _transient_extract(self,comp):
+        uu = self.uu_data[comp]
+        times = self.avg_data.times
+        index = [times,[comp]*len(times)]
+        return-1.*np.gradient(uu,times,axis=-1)
+    
+    def _get_stat_data(self, its, path):
+        return super()._get_stat_data(its, path, None)
+    
+
+    def plot_budget(self, time_list,budget_terms=None,wall_units=True, fig=None, ax =None,line_kw=None,**kwargs):
+        
+        budget_terms = self._check_terms(budget_terms)
+        line_kw= update_line_kw(line_kw)
+        fig, ax, single_input = self._create_budget_axes(time_list,fig,ax,**kwargs)
+
+        for i,time in enumerate(time_list):
+            fig, ax[i] = super().plot_budget(time,
+                                            budget_terms=budget_terms,
+                                            wall_units=wall_units,
+                                            fig=fig,
+                                            ax=ax[i],
+                                            line_kw=line_kw)
+            
+            time_label = self.Domain.timeStyle
+            ax[i].set_title(r"$%s = %.3g$"%(time_label,time),loc='right')
+            
+        handles = ax[0].get_lines()
+        labels = [line.get_label() for line in handles]
+
+        handles = flip_leg_col(handles,4)
+        labels = flip_leg_col(labels,4)
+
+        fig.clegend(handles,labels,loc='upper center',bbox_to_anchor=(0.5,0.1),ncol=4)
+
+        return fig, ax[0] if single_input else ax
+
+    def plot_integral_budget(self, budget_terms, fig=None, ax=None, line_kw=None, **kwargs):
+        budget_terms = self._check_terms(budget_terms)
+    
+        kwargs = update_subplots_kw(kwargs,figsize=[10,5])
+        fig, ax  = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+
+        line_kw= update_line_kw(line_kw)
+
+        times = self.avg_data.times
+
+        for comp in budget_terms:
+            budget_term = self.budget_data[comp]
+            int_budget = 0.5*self.Domain.Integrate_tot(self.Coord_ND_DF,budget_term)
+            label = r"$\int^{\delta}_{-\delta}$ %s $dy$"%comp.title()
+            ax.cplot(times,int_budget,label=label,**line_kw)
+
+        time_label = self.Domain.timeStyle
+        ax.set_xlabel(r"$%s$"%time_label)
+        
+        return fig, ax    
