@@ -1,5 +1,4 @@
 import os
-from tabnanny import check
 
 def check_path(path,statistics=False,data=False):
     if not os.path.isdir(path):

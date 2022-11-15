@@ -1,11 +1,14 @@
 import numpy as np
-from ._data_handlers import (stat_z_handler, 
+from ._data_handlers import (stathandler_base,
+                             stat_z_handler, 
                              stat_xz_handler,
                              stat_xzt_handler)
 
-from ._common import CommonData, classproperty
+from ._common import (CommonData,
+                      classproperty,
+                      CommonTemporalData)
 from ._average import x3d_avg_z, x3d_avg_xz, x3d_avg_xzt
-
+from ..utils import get_iterations
 import flowpy as fp
 from flowpy.utils import check_list_vals
 from flowpy.plotting import (update_subplots_kw, 
@@ -143,7 +146,7 @@ class budgetBase(CommonData,ABC):
                     math_split[i] = math_split[i].title()
         return "$".join(math_split)
 
-class ReynoldsBudget_base(ABC):
+class ReynoldsBudget_base(stathandler_base,ABC):
     def _budget_extract(self,comp):
 
         production = self._production_extract(comp)
@@ -197,14 +200,6 @@ class ReynoldsBudget_base(ABC):
     def _dissipation_extract(self,*args,**kwargs):
         raise NotImplementedError        
 
-_avg_z_class = x3d_avg_z
-class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
-    _flowstruct_class = fp.FlowStruct2D
-
-    @classproperty
-    def _get_avg_data(self):
-        return self._module._avg_z_class
-
     def _get_stat_data(self,it, path, it0):
         
         self.mean_data = self.avg_data.mean_data
@@ -225,6 +220,197 @@ class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
         del self.pdudx_data
         del self.dudx2_data
 
+    def _extract_uuumean(self,path,it,it0):
+        names = ['uuumean','uuvmean','uuwmean',
+                 'uvvmean','uvwmean','uwwmean',
+                 'vvvmean','vwwmean','vvwmean','wwwmean']
+
+        l = self._get_data(path,'uuu_mean',names,it,10)
+        if it0 is not None:
+            l0 = self._get_data(path,'uuu_mean',names,it0,10)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['uuu','uuv','uuw','uvv','uvw','uww',
+                 'vvv','vvw','vww','www']
+
+        self._check_attr('mean_data')
+        self._check_attr('uu_data')
+        i = 0
+        for time in self.mean_data.times:    
+            for comp in comps:
+                comp_uu_12 = comp[:2]
+                comp_uu_13 = comp[0] + comp[2]
+                comp_uu_23 = comp[1:]
+
+                comp_u_1 = comp[0]
+                comp_u_2 = comp[1]
+                comp_u_3 = comp[2]
+
+                u1 = self.mean_data[time,comp_u_1]
+                u2 = self.mean_data[time,comp_u_2]
+                u3 = self.mean_data[time,comp_u_3]
+
+                u1u2 = self.uu_data[time,comp_uu_12]
+                u1u3 = self.uu_data[time,comp_uu_13]
+                u2u3 = self.uu_data[time,comp_uu_23]
+
+                l[i] = l[i] - (u1*u2*u3 + u1*u2u3 \
+                            + u2*u1u3 + u3*u1u2)
+                i += 1
+                
+        index = self._get_index(it,comps)
+        uuu_data =  self._flowstruct_class(coorddata,
+                                           l,
+                                           index=index)
+        return uuu_data
+
+    def _extract_dudxmean(self,path,it,it0):
+        names = ['dudxmean','dudymean','dudzmean',
+                 'dvdxmean','dvdymean','dvdzmean',
+                 'dwdxmean','dwdymean','dwdzmean']
+
+        l = self._get_data(path,'dudx_mean',names,it,9)
+        if it0 is not None:
+            l0 = self._get_data(path,'dudx_mean',names,it0,9)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['dudx','dudy','dudz',
+                 'dvdx','dvdy','dvdz',
+                 'dwdx','dwdy','dwdz']
+
+        index = self._get_index(it,comps)
+        dudx_mean =  self._flowstruct_class(coorddata,
+                                            l,
+                                            index=index)  
+
+        return dudx_mean
+
+    def _extract_pumean(self,path,it,it0):
+        names = ['pumean','pvmean','pwmean']
+
+        l = self._get_data(path,'pu_mean',names,it,3)
+        if it0 is not None:
+            l0 = self._get_data(path,'pu_mean',names,it0,3)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['pu','pv','pw']
+
+        self._check_attr('mean_data')
+        i=0
+        for time in self.mean_data.times:
+            p = self.mean_data[time,'p']
+            for comp in comps:
+                comp = comp[1]
+                u = self.mean_data[time,comp]
+                l[i] = l[i] - p*u
+                i += 1
+                
+        index = self._get_index(it,comps)
+        pu_data =  self._flowstruct_class(coorddata,
+                                          l,
+                                          index=index)
+        return pu_data
+
+    def _extract_pdudxmean(self,path,it,it0):
+        names = ['pdudxmean','pdvdymean','pdwdzmean']
+
+        l = self._get_data(path,'pdudx_mean',names,it,3)
+        if it0 is not None:
+            l0 = self._get_data(path,'pdudx_mean',names,it0,3)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['pdudx','pdvdy','pdwdz']
+
+        self._check_attr('mean_data')
+        self._check_attr('dudx_data')
+        i = 0
+        for time in self.mean_data.times:
+            p = self.mean_data[time,'p']
+            for comp in comps:
+                comp = comp[1:]
+                u = self.dudx_data[time,comp]
+                l[i] = l[i] - p*u
+                i += 1
+                
+        index = self._get_index(it,comps)
+        pdudx_data =  self._flowstruct_class(coorddata,
+                                             l,
+                                             index=index)
+        return pdudx_data
+
+    def _extract_dudx2mean(self,path,it,it0):
+        names = ['dudxdudxmean','dudxdvdxmean', 'dudxdwdxmean', 
+                'dvdxdvdxmean', 'dvdxdwdxmean', 'dwdxdwdxmean',
+                'dudydudymean', 'dudydvdymean', 'dudydwdymean', 
+                'dvdydvdymean', 'dvdydwdymean', 'dwdydwdymean']
+        
+        l = self._get_data(path,'dudxdudx_mean',names,it,12)
+        
+        if it0 is not None:
+            l0 = self._get_data(path,'dudxdudx_mean',names,it0,12)
+            
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['dudxdudx','dudxdvdx', 'dudxdwdx', 
+                'dvdxdvdx', 'dvdxdwdx', 'dwdxdwdx',
+                'dudydudy', 'dudydvdy', 'dudydwdy', 
+                'dvdydvdy', 'dvdydwdy', 'dwdydwdy']
+
+        self._check_attr('dudx_data')
+        i = 0
+        for time in self.mean_data.times:
+            for comp in comps:
+                comp1 = comp[:4]
+                comp2 = comp[4:]
+
+                u1 = self.dudx_data[time,comp1]
+                u2 = self.dudx_data[time,comp2]
+
+                l[i] = l[i] - u1*u2
+                i += 1
+                
+        index = self._get_index(it,comps)
+        dudx2_data =  self._flowstruct_class(coorddata,
+                                             l,
+                                             index=index)
+        return dudx2_data  
+_avg_z_class = x3d_avg_z
+class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
+
+    @classproperty
+    def _get_avg_data(self):
+        return self._module._avg_z_class
+    
     def _advection_extract(self,comp):
 
         uu = self.uu_data[comp]
@@ -420,29 +606,34 @@ _avg_xz_class = x3d_avg_xz
 class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
     _flowstruct_class = fp.FlowStruct1D
 
+    def _extract_uuumean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)        
+        return super()._extract_uuumean(path,its,None)
+
+    def _extract_dudxmean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)        
+        return super()._extract_dudxmean(path,its,None)
+
+    def _extract_pumean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)        
+        return super()._extract_pumean(path,its,None)
+
+    def _extract_pdudxmean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)        
+        return super()._extract_pdudxmean(path,its,None)
+
+    def _extract_dudx2mean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)        
+        return super()._extract_dudx2mean(path,its,None)
+    
     @classproperty
     def _get_avg_data(self):
         return self._module._avg_xz_class
-
-    def _get_stat_data(self,it, path, it0):
-        
-        self.mean_data = self.avg_data.mean_data
-        self.uu_data = self.avg_data.uu_data
-
-        self.uuu_data = self._extract_uuumean(path,it, it0)
-        self.dudx_data = self._extract_dudxmean(path,it, it0)
-        self.pu_data = self._extract_pumean( path,it, it0)
-        self.pdudx_data = self._extract_pdudxmean(path, it, it0)
-        self.dudx2_data = self._extract_dudx2mean(path, it, it0)
-
-    def _del_stat_data(self):
-        del self.mean_data
-        del self.uu_data
-        del self.uuu_data
-        del self.dudx_data
-        del self.pu_data
-        del self.pdudx_data
-        del self.dudx2_data
 
     def _advection_extract(self,comp):
     
@@ -597,8 +788,24 @@ class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
     
     
 _avg_xzt_class = x3d_avg_xzt
-class x3d_budget_xzt(x3d_budget_xz,stat_xzt_handler):
+class x3d_budget_xzt(x3d_budget_xz,stat_xzt_handler,CommonTemporalData):
     _flowstruct_class = fp.FlowStruct1D_time
+    @classmethod
+    def from_phase_average(cls,comp,paths,its=None,*args,**kwargs):
+        its_list = cls._get_its_phase(paths,its=its)
+        avg_list = []
+        for path,its in zip(paths,its_list):
+            avg = cls(comp,path,its=its,*args,**kwargs)
+            
+            avg._test_times_shift(path)
+            avg_list.append(avg)
+            
+        return cls.phase_average(*avg_list)
+    
+    @property
+    def times(self):
+        return self.avg_data.times
+    
     @classproperty
     def _get_avg_data(self):
         return self._module._avg_xzt_class

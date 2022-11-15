@@ -11,6 +11,10 @@ from ._instant import (x3d_inst_z,
                        x3d_inst_xz,
                        x3d_inst_xzt)
 
+from ._quadrant_a import (x3d_quadrant_z,
+                          x3d_quadrant_xz,
+                          x3d_quadrant_xzt)
+
 from ._fluct import x3d_fluct_z
 from ._data_handlers import (read_stat_z_file,
                              read_parameters)

@@ -18,9 +18,14 @@ from flowpy.plotting import (update_subplots_kw,
 
 class meta_x3d(xp.meta_x3d):
     def _meta_hook(self, params):
-        self.metaDF.update({'t_start' : params['temp_accel']['t_start'],
-                            't_end' : params['temp_accel']['t_end'],
-                            'Re_ratio' : params['temp_accel']['Re_ratio']})
+        if params['temp_accel']['profile'] == 'linear':
+            self.metaDF.update({'t_start' : params['temp_accel']['t_start'],
+                                't_end' : params['temp_accel']['t_end'],
+                                'Re_ratio' : params['temp_accel']['Re_ratio']})
+        elif params['temp_accel']['profile'] == 'spatial equiv':
+            self.metaDF.update({'U_ratio' : params['temp_accel']['U_ratio'],
+                                'x0' : params['temp_accel']['x0'],
+                                'alpha_accel' : params['temp_accel']['alpha_accel']})
         
 _meta_class  = meta_x3d
 
@@ -29,18 +34,19 @@ class temp_accel_base(CommonTemporalData,ABC):
     def phase_average(cls, *objects, items=None):
         temp_object = super().phase_average(*objects, items=items)
         
-        temp_object.metaDF['temp_accel']['t_start'] += temp_object._time_shift
-        temp_object.metaDF['temp_accel']['t_end'] += temp_object._time_shift
+        temp_object.metaDF['t_start'] += temp_object._time_shift
+        temp_object.metaDF['t_end'] += temp_object._time_shift
         
         return temp_object    
     
+    @property
     def _time_shift(self):
         return -self.metaDF['t_start']
     
     def _get_its_shift(cls,path) -> int:
-        metaDF = cls._module._meta_class(path)
+        meta_data = cls._module._meta_class(path)
         
-        return metaDF['t_start']/metaDF['dt']
+        return meta_data.get_it(meta_data.metaDF['t_start'])
     
 class x3d_inst_xzt(xp.x3d_inst_xzt):
     pass
@@ -95,5 +101,7 @@ class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
     
 _avg_xzt_class = x3d_avg_xzt
 
-class x3d_budget_xzt(xp.x3d_budget_xzt):
+
+
+class x3d_budget_xzt(xp.x3d_budget_xzt,temp_accel_base):
     pass

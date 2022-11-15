@@ -7,6 +7,8 @@ import numpy as np
 import flowpy as fp
 from inspect import getmembers
 from functools import wraps
+import copy
+
 class classproperty():
     def __init__(self,func):
         self.f = func
@@ -68,20 +70,12 @@ class CommonData(Common):
     def _coorddata(self) -> fp.AxisData:
         pass
 
-    @staticmethod
-    def _get_stat_file_z(path,name,it):
-        check_path(path,statistics=True)
-
-        stat_path = os.path.join(path,'statistics')
-
-        fn = name + '.dat'+ str(it).zfill(7)
-
-        return os.path.join(stat_path,fn)
-
-    @property
     def _flowstructs(self) -> dict[fp.FlowStruct1D]:
         members = getmembers(self,lambda x: isinstance(x,fp.FlowStructND))
         return dict(members)
+    
+    def copy(self):
+        return copy.deepcopy(self)
 
 def require_override(func):
     
@@ -111,7 +105,7 @@ class CommonTemporalData(CommonData):
             items = np.ones(len(objects))
 
         base_object = objects[0].copy()
-        object_attrs = dir(base_object)
+        object_attrs = base_object.__dict__.keys()
         
         for attr in object_attrs:
             vals = [getattr(ob,attr) for ob in objects]
@@ -138,12 +132,15 @@ class CommonTemporalData(CommonData):
                 vals = base_object._handle_time_remove(vals,times_list)
                 coeffs = items/np.sum(items)
                 phase_val = sum(coeffs*vals)
-                
+
                 setattr(base_object,attr,phase_val)
                 
             else:
                 cls._type_hook(base_object,attr,vals)
+
+        return base_object
     
+    @classmethod
     def _type_hook(cls,base_object,attr,vals):
         pass
     
@@ -152,19 +149,19 @@ class CommonTemporalData(CommonData):
         pass
     
     def set_times(self,value):
-        for  v in self._flowstructs.values():
+        for  v in self._flowstructs().values():
             if not len(value) == len(v.times):
                 raise ValueError("The length of the new times"
                                 " must be the same as the existing one")
             v.times = value
             
     def _del_times(self,times):
-        for  v in self._flowstructs.values():
+        for  v in self._flowstructs().values():
             for time in times:
                 v.remove_time(time)
                 
     def shift_times(self,time):
-        for v in self._flowstructs.values():
+        for v in self._flowstructs().values():
             v.shift_times(time)
 
     def _handle_time_remove(self,fstructs: list[fp.FlowStructND],

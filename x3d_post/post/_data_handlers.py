@@ -5,7 +5,7 @@ from os.path import join
 import json
 import xml.etree.ElementTree as ET
 import os
-from ..utils import get_iterations
+from ..utils import check_path
 
 from numbers import Number
 def read_parameters(path):
@@ -21,8 +21,19 @@ def read_stat_z_file(file_path,shape,dtype='f8',mean_x=False):
         data = data.mean(axis=-1)
     return data
 
-class _stathandler_base(ABC):
+class stathandler_base(ABC):
     _flowstruct_class = None
+    
+    @staticmethod
+    def _get_stat_file_z(path,name,it):
+        check_path(path,statistics=True)
+
+        stat_path = os.path.join(path,'statistics')
+
+        fn = name + '.dat'+ str(it).zfill(7)
+
+        return os.path.join(stat_path,fn)
+    
     def _check_attr(self,attr):
         if not hasattr(self,attr):
             raise AttributeError(f"Attribute {attr} must be "
@@ -42,258 +53,33 @@ class _stathandler_base(ABC):
         
         if isinstance(it,Number):
             it = [it]
-        times = (np.array(it)[:,None]*np.ones(len(comps))*self.metaDF['dt']).flatten()
+            
+        times = np.array([self._meta_data.get_time(i) for i in it])
+        times = (times[:,None]*np.ones(len(comps))).flatten()
         comps = list(comps)*len(it)
         return [times,comps]
+    
     @abstractmethod
-    def _get_data(self,path,names,it):
+    def _get_old_data(self,path,names,it):
         pass
-
+    
+    @abstractmethod
+    def _get_new_data(self,path,name,it,size):
+        pass
+    
+    def _get_data(self,path,name,old_names,it,size):
+        if fp.rcParams['new_data']:
+            return self._get_new_data(path,name,it,size)
+        else:
+            return self._get_old_data(path,old_names,it)
+            
     def _get_nstat(self,it):
         return (it - self.metaDF['initstat']) // self.metaDF['istatcalc']
 
-    def _extract_umean(self,path,it,it0):
-        names = ['umean','vmean','wmean','pmean']
 
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['u','v','w','p']
-        index = self._get_index(it,comps)
-
-        mean_data = self._flowstruct_class(coorddata,
-                                            l,
-                                            index=index)
-        return mean_data
-
-    def _extract_uumean(self,path,it,it0):
-        names = ['uumean','vvmean','wwmean',
-                 'uvmean','uwmean','vwmean']
-
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['uu','vv','ww','uv','uw','vw']
-
-        self._check_attr('mean_data')
-        i =0
-        for time in self.mean_data.times:
-            for comp in comps:
-                comp1, comp2 = comp
-                u1 = self.mean_data[time,comp1]
-                u2 = self.mean_data[time,comp2]
-
-                l[i] = l[i] - u1*u2
-                i += 1
-                
-        index = self._get_index(it,comps)
-        uu_data =  self._flowstruct_class(coorddata,
-                                          l,
-                                          index=index)
-        return uu_data
-
-    def _extract_uuumean(self,path,it,it0):
-        names = ['uuumean','uuvmean','uuwmean',
-                 'uvvmean','uvwmean','uwwmean',
-                 'vvvmean','vwwmean','vvwmean','wwwmean']
-
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['uuu','uuv','uuw','uvv','uvw','uww',
-                 'vvv','vvw','vww','www']
-
-        self._check_attr('mean_data')
-        self._check_attr('uu_data')
-        i = 0
-        for time in self.mean_data.times:    
-            for comp in comps:
-                comp_uu_12 = comp[:2]
-                comp_uu_13 = comp[0] + comp[2]
-                comp_uu_23 = comp[1:]
-
-                comp_u_1 = comp[0]
-                comp_u_2 = comp[1]
-                comp_u_3 = comp[2]
-
-                u1 = self.mean_data[time,comp_u_1]
-                u2 = self.mean_data[time,comp_u_2]
-                u3 = self.mean_data[time,comp_u_3]
-
-                u1u2 = self.uu_data[time,comp_uu_12]
-                u1u3 = self.uu_data[time,comp_uu_13]
-                u2u3 = self.uu_data[time,comp_uu_23]
-
-                l[i] = l[i] - (u1*u2*u3 + u1*u2u3 \
-                            + u2*u1u3 + u3*u1u2)
-                i += 1
-                
-        index = self._get_index(it,comps)
-        uuu_data =  self._flowstruct_class(coorddata,
-                                           l,
-                                           index=index)
-        return uuu_data
-
-    def _extract_dudxmean(self,path,it,it0):
-        names = ['dudxmean','dudymean','dudzmean',
-                 'dvdxmean','dvdymean','dvdzmean',
-                 'dwdxmean','dwdymean','dwdzmean']
-
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['dudx','dudy','dudz',
-                 'dvdx','dvdy','dvdz',
-                 'dwdx','dwdy','dwdz']
-
-        index = self._get_index(it,comps)
-        dudx_mean =  self._flowstruct_class(coorddata,
-                                            l,
-                                            index=index)  
-
-        return dudx_mean
-
-    def _extract_pumean(self,path,it,it0):
-        names = ['pumean','pvmean','pwmean']
-
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['pu','pv','pw']
-
-        self._check_attr('mean_data')
-        i=0
-        for time in self.mean_data.times:
-            p = self.mean_data[time,'p']
-            for comp in comps:
-                comp = comp[1]
-                u = self.mean_data[time,comp]
-                l[i] = l[i] - p*u
-                i += 1
-                
-        index = self._get_index(it,comps)
-        pu_data =  self._flowstruct_class(coorddata,
-                                          l,
-                                          index=index)
-        return pu_data
-
-    def _extract_pdudxmean(self,path,it,it0):
-        names = ['pdudxmean','pdvdymean','pdwdzmean']
-
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['pdudx','pdvdy','pdwdz']
-
-        self._check_attr('mean_data')
-        self._check_attr('dudx_data')
-        i = 0
-        for time in self.mean_data.times:
-            p = self.mean_data[time,'p']
-            for comp in comps:
-                comp = comp[1:]
-                u = self.dudx_data[time,comp]
-                l[i] = l[i] - p*u
-                i += 1
-                
-        index = self._get_index(it,comps)
-        pdudx_data =  self._flowstruct_class(coorddata,
-                                             l,
-                                             index=index)
-        return pdudx_data
-
-    def _extract_dudx2mean(self,path,it,it0):
-        names = ['dudxdudxmean','dudxdvdxmean', 'dudxdwdxmean', 
-                'dvdxdvdxmean', 'dvdxdwdxmean', 'dwdxdwdxmean',
-                'dudydudymean', 'dudydvdymean', 'dudydwdymean', 
-                'dvdydvdymean', 'dvdydwdymean', 'dwdydwdymean']
-
-        l = self._get_data(path,names,it)
-        if it0 is not None:
-            l0 = self._get_data(path,names,it0)
-            it = self._get_nstat(it)
-            it0 = self._get_nstat(it0)
-
-            l = (it*l - it0*l0) / (it - it0)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['dudxdudx','dudxdvdx', 'dudxdwdx', 
-                'dvdxdvdx', 'dvdxdwdx', 'dwdxdwdx',
-                'dudydudy', 'dudydvdy', 'dudydwdy', 
-                'dvdydvdy', 'dvdydwdy', 'dwdydwdy']
-
-        self._check_attr('dudx_data')
-        i = 0
-        for time in self.mean_data.times:
-            for comp in comps:
-                comp1 = comp[:4]
-                comp2 = comp[4:]
-
-                u1 = self.dudx_data[time,comp1]
-                u2 = self.dudx_data[time,comp2]
-                l[i] = l[i] - u1*u2
-                i += 1
-                
-        index = self._get_index(it,comps)
-        dudx2_data =  self._flowstruct_class(coorddata,
-                                             l,
-                                             index=index)
-        return dudx2_data  
-
-class stat_z_handler(_stathandler_base,ABC):
+class stat_z_handler(stathandler_base,ABC):
     _flowstruct_class = fp.FlowStruct2D
-    def _get_data(self,path,names,it):
+    def _get_old_data(self,path,names,it):
         shape = (len(names), self.NCL[1], self.NCL[0])
 
         l = np.zeros(shape)
@@ -301,62 +87,40 @@ class stat_z_handler(_stathandler_base,ABC):
             fn = self._get_stat_file_z(path,name,it)
             l[i] = read_stat_z_file(fn,shape[1:])
         return l
-
+    
+    def _get_new_data(self,path,name,it,size):
+        shape = (size, self.NCL[1], self.NCL[0])
+        fn = self._get_stat_file_z(path,name,it)
+        return read_stat_z_file(fn,shape)
+    
 class stat_xz_handler(stat_z_handler,ABC):
     _flowstruct_class = fp.FlowStruct1D
-    def _get_data(self,path,names,it):
-        l = super()._get_data(path,names,it)
-        return l.mean(axis=-1)
+    def _get_data(self,*args):
+        l = super()._get_data(*args)
+        return l.mean(axis=-1)        
 
 class stat_xzt_handler(stat_xz_handler,ABC):
     _flowstruct_class = fp.FlowStruct1D_time
-    def _get_data(self,path,names,its):
+    def _get_old_data(self,path,names,its):
            
         shape = (len(names)*len(its), self.NCL[1],self.NCL[0])
 
-        l = np.zeros(shape[:2])
+        l = np.zeros(shape)
         i = 0
         for it in its:
             for name in names:
                 fn = self._get_stat_file_z(path,name,it)
-                l[i] = read_stat_z_file(fn,shape[1:]).mean(axis=-1)
+                l[i] = read_stat_z_file(fn,shape[1:])
                 i += 1
         return l
-
-    def _extract_umean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)
-        return super()._extract_umean(path,its,None)
-
-    def _extract_uumean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)
-        return super()._extract_uumean(path,its,None)
     
-    def _extract_uuumean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)        
-        return super()._extract_uuumean(path,its,None)
-
-    def _extract_dudxmean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)        
-        return super()._extract_dudxmean(path,its,None)
-
-    def _extract_pumean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)        
-        return super()._extract_pumean(path,its,None)
-
-    def _extract_pdudxmean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)        
-        return super()._extract_pdudxmean(path,its,None)
-
-    def _extract_dudx2mean(self,path,its,it0):
-        if its is None:
-            its = get_iterations(path,statistics=True)        
-        return super()._extract_dudx2mean(path,its,None)
+    def _get_new_data(self,path,name,its,size):
+        shape = (size*len(its), self.NCL[1],self.NCL[0])
+        l = np.zeros(shape)
+        for i, it in enumerate(its):
+            l[i*size:(i+1)*size] = super()._get_new_data(path,name,it,size)
+            
+        return l
 
 class inst_reader(ABC):
     _reader_comps = {'u':'ux',
@@ -411,7 +175,7 @@ class inst_reader(ABC):
 
             data = np.fromfile(fn,dtype='f8').reshape(shape)
             l.append(data)
-        time = it*self.metaDF['dt']
+        time = self._meta_data.get_time(it)
         index = [[time]*len(comps),comps]
         u_data = fp.FlowStruct3D(coorddata,
                                   np.array(l),

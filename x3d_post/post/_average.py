@@ -1,3 +1,4 @@
+from re import L
 import warnings
 import numpy as np
 
@@ -8,17 +9,17 @@ else:
     from scipy.integrate import simps as integrate_simps
 
 import os
-import gc
-import itertools
-import copy
-from functools import partial
-from abc import ABC, abstractmethod, abstractproperty
+
+from abc import ABC, abstractmethod
 
 from ._meta import meta_x3d
 from ._common import (CommonData,
-                      CommonTemporalData)
+                      CommonTemporalData,)
+from ..style import get_symbol
+from ..utils import get_iterations
 import flowpy as fp
-from ._data_handlers import (stat_z_handler,
+from ._data_handlers import (stathandler_base,
+                             stat_z_handler,
                              stat_xz_handler,
                              stat_xzt_handler)
 
@@ -26,11 +27,12 @@ from flowpy.plotting import (update_subplots_kw,
                              create_fig_ax_with_squeeze,
                              update_line_kw,
                              )
-from flowpy.utils import (check_list_vals)
+from flowpy.utils import (check_list_vals,)
 
 _meta_class = meta_x3d
 
-class _AVG_base(CommonData,ABC):
+class _AVG_base(CommonData,stathandler_base,ABC):
+
     def __init__(self,*args,from_hdf=False,**kwargs):
 
         if from_hdf:
@@ -38,9 +40,21 @@ class _AVG_base(CommonData,ABC):
         else:
             self._extract_avg(*args,**kwargs)
 
-    @abstractmethod
-    def _extract_avg(self,*args,**kwargs):
-        raise NotImplementedError        
+    def _extract_avg(self,it,path,it0=None):
+        
+        self._meta_data = self._module._meta_class(path)
+
+        self.mean_data = self._extract_umean(path,it,it0)
+        self.uu_data = self._extract_uumean(path,it,it0)
+        
+        fn = self._get_stat_file_z(path,'uuu_mean',it)
+        if os.path.isfile(fn):
+            self.uuu_data = self._extract_uuumean(path,it,it0)
+        
+        fn = self._get_stat_file_z(path,'uuuu_mean',it)
+        if os.path.isfile(fn):
+            self.uuuu_data = self._extract_uuuumean(path,it,it0)
+      
     
     @abstractmethod
     def Wall_Coords(self,*args,**kwargs):
@@ -73,29 +87,20 @@ class _AVG_base(CommonData,ABC):
     def from_hdf(cls,*args,**kwargs):
         return cls(from_hdf=True,*args,**kwargs)
 
-    def save_hdf(self,fn, mode,key=None):
-        """
-        Saving the CHAPSim_AVG classes to a file in hdf5 file format
-
-        Parameters
-        ----------
-        file_name : str, path-like
-            File path of the resulting hdf5 file
-        write_mode : str
-            Mode of file opening the file must be able to modify the file. Passed to the h5py.File method
-        key : str (path-like), optional
-            Location in the hdf file, by default it is the name of the class
-        """
+    def save_hdf(self, fn, mode, key=None):
         key = self._get_hdf_key(key)
 
-        hdf_obj = fp.hdfHandler(fn,mode=mode,key=key)
-        hdf_obj.set_type_id(self.__class__)
+        h5_obj = self._meta_data.save_hdf(fn,mode,key=key+'/meta_data')
+        self.mean_data.to_hdf(fn,key=key+'/mean_data')
+        self.uu_data.to_hdf(fn,key=key+'/uu_data')
 
-        self._meta_data.save_hdf(fn,'a',key=key+'/meta_data')
-        self.mean_data.to_hdf(fn,'a',key=key+'/mean_data',mode='a')
-        self.uu_data.to_hdf(fn,'a',key=key+'/uu_data',mode='a')
-
-        return hdf_obj
+        if hasattr(self,'uuu_data'):
+            self.uuu_data.to_hdf(fn,key=key+'/uuu_data')
+            
+        if hasattr(self,'uuuu_data'):
+            self.uuuu_data.to_hdf(fn,key=key+'/uuuu_data')            
+        
+        return h5_obj
 
     @abstractmethod
     def _hdf_extract(self,*args,**kwargs):
@@ -122,6 +127,158 @@ class _AVG_base(CommonData,ABC):
         
         return self.mean_data.check_outer(PhyTime,err_msg,warn_msg) 
 
+
+    def _extract_umean(self,path,it,it0):
+
+        names = ['umean','vmean','wmean','pmean']
+        l = self._get_data(path,'uvwp_mean',names,it,4)
+
+        if it0 is not None:
+            l0 = self._get_data(path,'uvwp_mean',names,it0,4)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['u','v','w','p']
+        index = self._get_index(it,comps)
+
+        mean_data = self._flowstruct_class(coorddata,
+                                            l,
+                                            index=index)
+        return mean_data
+
+    def _extract_uumean(self,path,it,it0):
+        names = ['uumean','vvmean','wwmean',
+                 'uvmean','uwmean','vwmean']
+
+        l = self._get_data(path,'uu_mean',names,it,6)
+        if it0 is not None:
+            l0 = self._get_data(path,'uu_mean',names,it0,6)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['uu','vv','ww','uv','uw','vw']
+
+        self._check_attr('mean_data')
+        i =0
+        for time in self.mean_data.times:
+            for comp in comps:
+                comp1, comp2 = comp
+                u1 = self.mean_data[time,comp1]
+                u2 = self.mean_data[time,comp2]
+
+                l[i] = l[i] - u1*u2
+                i += 1
+                
+        index = self._get_index(it,comps)
+        uu_data =  self._flowstruct_class(coorddata,
+                                          l,
+                                          index=index)
+        return uu_data
+    
+    def _extract_uuumean(self,path,it,it0):
+        names = ['uuumean','uuvmean','uuwmean',
+                 'uvvmean','uvwmean','uwwmean',
+                 'vvvmean','vwwmean','vvwmean','wwwmean']
+
+        l = self._get_data(path,'uuu_mean',names,it,10)
+        if it0 is not None:
+            l0 = self._get_data(path,'uuu_mean',names,it0,10)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+        l = l[[0,6,8]]
+        
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['uuu','vvv','www']
+
+        self._check_attr('mean_data')
+        self._check_attr('uu_data')
+        i = 0
+        for time in self.mean_data.times:    
+            for comp in comps:
+                comp_uu_12 = comp[:2]
+                comp_uu_13 = comp[0] + comp[2]
+                comp_uu_23 = comp[1:]
+
+                comp_u_1 = comp[0]
+                comp_u_2 = comp[1]
+                comp_u_3 = comp[2]
+
+                u1 = self.mean_data[time,comp_u_1]
+                u2 = self.mean_data[time,comp_u_2]
+                u3 = self.mean_data[time,comp_u_3]
+
+                u1u2 = self.uu_data[time,comp_uu_12]
+                u1u3 = self.uu_data[time,comp_uu_13]
+                u2u3 = self.uu_data[time,comp_uu_23]
+
+                l[i] = l[i] - (u1*u2*u3 + u1*u2u3 \
+                            + u2*u1u3 + u3*u1u2)
+                i += 1
+                
+        index = self._get_index(it,comps)
+        uuu_data =  self._flowstruct_class(coorddata,
+                                           l,
+                                           index=index)
+        return uuu_data
+    
+    def _extract_uuuumean(self,path,it,it0):
+        l = self._get_data(path,'uuuu_mean',None,it,3)
+        if it0 is not None:
+            l0 = self._get_data(path,'uuuu_mean',None,it0,3)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+        
+        print(l)
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = ['uuuu','vvvv','wwww']
+
+        self._check_attr('mean_data')
+        self._check_attr('uu_data')
+        self._check_attr('uuu_data')
+
+        i = 0
+        for time in self.mean_data.times:    
+            for comp in comps:
+                comp_uuu = comp[:3]
+                comp_uu = comp[:2]
+                comp_u = comp[0]
+
+
+                u = self.mean_data[time,comp_u]
+                uu = self.uu_data[time,comp_uu]
+                uuu = self.uuu_data[time,comp_uuu]
+
+                u2 = uu + u*u
+                u3 = uuu +3*u*u2 -2*u*u*u
+                l[i] = l[i] - 4*u3*u + 6*u2*u*u - 3*u*u*u*u
+                i += 1
+                
+        index = self._get_index(it,comps)
+        uuu_data =  self._flowstruct_class(coorddata,
+                                           l,
+                                           index=index)
+        return uuu_data
+    
+    
 class _AVG_developing(_AVG_base):
     @abstractmethod
     def _return_index(self,*args,**kwargs):
@@ -221,13 +378,6 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
     def _return_xaxis(self):
             return self.CoordDF['x']
 
-    def _extract_avg(self,it,path,it0=None):
-        
-        self._meta_data = self._module._meta_class(path)
-
-        self.mean_data = self._extract_umean(path,it,it0)
-        self.uu_data = self._extract_uumean(path,it,it0)
-
     def _hdf_extract(self, fn,key=None):
         key = self._get_hdf_key(key)
 
@@ -236,15 +386,13 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         self.mean_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/mean_data')
         self.uu_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/uu_data')
 
-        return fp.hdfHandler(fn,'r',key=key)
-
-    def save_hdf(self, fn, mode, key=None):
-        key = self._get_hdf_key(key)
-
-        h5_obj = self._meta_data.save_hdf(fn,mode,key=key+'/meta_data')
-        self.mean_data.to_hdf(fn,key=key+'/mean_data')
-        self.uu_data.to_hdf(fn,key=key+'/uu_data')
-
+        h5_obj = fp.hdfHandler(fn,'r',key=key)
+        if 'uuu_data' in h5_obj.keys():
+            self.uuu_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/uuu_data')
+        
+        if 'uuuu_data' in h5_obj.keys():
+            self.uuuu_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/uuuu_data')                
+        
         return h5_obj
 
     def Translate(self,translation):
@@ -396,15 +544,19 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         
         return x_transform, y_transform
     
-    def plot_flow_wall_units(self,x_vals,plot_uplus_yplus=True,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+    def plot_flow_wall_units(self,x_vals,plot_uplus_yplus=True,PhyTime=None,fig=None,ax=None,line_kw:dict =None,**kwargs):
         
         PhyTime = self.check_PhyTime(PhyTime)
         x_vals = check_list_vals(x_vals)
         x_vals = self.CoordDF.get_true_coords('x',x_vals)
 
-        for x in x_vals:
-            labels = [self.Domain.create_label(r"$x = %.3g$"%x)] \
-                            if 'label' not in line_kw else None
+        x_labels = [self.Domain.create_label(r"$x = %.3g$"%x) for x in x_vals]
+        for i, x in enumerate(x_vals):
+            if line_kw is None:
+                labels  = x_labels[i]
+            else:
+                labels = line_kw.get('label',None)
+                            
             x_transform, y_transform = self._get_uplus_yplus_transforms(PhyTime, x)
             fig, ax = self.mean_data.plot_line('u','y',
                                                 x,
@@ -582,14 +734,102 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
 
         return fig, ax        
 
-
-class x3d_avg_xz(_AVG_base,stat_xz_handler):
-    def _extract_avg(self,it,path,it0=None):
+    def plot_flatness(self,comp,axis_vals,direction='y',y_mode_wall=False,x_val=0,norm=True,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
         
-        self._meta_data = self._module._meta_class(path)
+        self._check_attr('uuuu_data')
+        if comp not in self.uuuu_data.inner_index:
+            raise ValueError(f"Component {comp} not found")
+        
+        x_vals = check_list_vals(x_vals)
+        
+        if direction == 'x':
+            if y_mode_wall:
+                CoordDF = self._avg_data.Wall_Coords(x_val)
+                y = [CoordDF.index_calc('y',x) for x in axis_vals]
+            else:
+                y = [self.CoordDF.index_calc('y',x) for x in axis_vals]
+                
+            vals = self.CoordDF['y'][y]
+        else:
+            x = [self.CoordDF.index_calc('x',x) for x in axis_vals]
+            vals = self.CoordDF['x'][x]
 
-        self.mean_data = self._extract_umean(path,it,it0)
-        self.uu_data = self._extract_uumean(path,it,it0)
+
+        data = self.uuuu_data[PhyTime,[comp]].copy()
+        if norm:
+            uu = self.uu_data[PhyTime,comp[:2]]
+            data = data/(uu*uu)
+        
+        symbol = 'x' if direction == 'y' else 'wall' if y_mode_wall else 'half-channel'
+        unit = get_symbol(symbol)
+        labels = [self.Domain.create_label(rf"${unit} = %.3g$"%x) for x in axis_vals] 
+        
+        if line_kw is not None:
+            if 'label' in line_kw:
+                labels = None   
+                         
+        fig, ax = data.plot_line(comp,direction,vals,time=PhyTime,labels=labels,
+                                             fig=fig,channel_half=True,
+                                             ax=ax,line_kw=line_kw,**kwargs)
+
+        if norm:
+            ax.set_ylabel(r"$\overline{%s'^4}/\overline{%s'^2}^2$"%(comp[0],comp[0]))
+        else:
+            ax.set_ylabel(r"$\overline{%s'^4}$"%(comp[0]))
+
+        x_label = self.Domain.create_label(f"${direction}$")
+        ax[-1].set_xlabel(x_label)
+                
+        return fig, ax
+
+    def plot_skewness(self,comp,axis_vals,direction='y',y_mode_wall=False,x_val=0,norm=True,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+        
+        self._check_attr('uuu_data')
+        if comp not in self.uuu_data.inner_index:
+            raise ValueError(f"Component {comp} not found")
+        
+        x_vals = check_list_vals(x_vals)
+        
+        if direction == 'x':
+            if y_mode_wall:
+                CoordDF = self._avg_data.Wall_Coords(x_val)
+                y = [CoordDF.index_calc('y',x) for x in axis_vals]
+            else:
+                y = [self.CoordDF.index_calc('y',x) for x in axis_vals]
+                
+            vals = self.CoordDF['y'][y]
+        else:
+            x = [self.CoordDF.index_calc('x',x) for x in axis_vals]
+            vals = self.CoordDF['x'][x]
+
+
+        data = self.uuu_data[PhyTime,[comp]].copy()
+        if norm:
+            uu = self.uu_data[PhyTime,comp[:2]]
+            data = data/(uu**1.5)
+        
+        symbol = 'x' if direction == 'y' else 'wall' if y_mode_wall else 'half-channel'
+        unit = get_symbol(symbol)
+        labels = [self.Domain.create_label(rf"${unit} = %.3g$"%x) for x in axis_vals] 
+        
+        if line_kw is not None:
+            if 'label' in line_kw:
+                labels = None   
+                         
+        fig, ax = data.plot_line(comp,direction,vals,time=PhyTime,labels=labels,
+                                             fig=fig,channel_half=True,
+                                             ax=ax,line_kw=line_kw,**kwargs)
+
+        if norm:
+            ax.set_ylabel(r"$\overline{%s'^3}/\overline{%s'^2}^{3/2}$"%(comp[0],comp[0]))
+        else:
+            ax.set_ylabel(r"$\overline{%s'^3}$"%(comp[0]))
+
+        x_label = self.Domain.create_label(f"${direction}$")
+        ax[-1].set_xlabel(x_label)
+                
+        return fig, ax
+class x3d_avg_xz(_AVG_base,stat_xz_handler):
 
     def _hdf_extract(self, fn,key=None):
         key = self._get_hdf_key(key)
@@ -823,6 +1063,59 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         ax.set_xlim([-1,-0.1])
         return fig, ax        
     
+    def plot_flatness(self,comp,norm=False,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+        
+        self._check_attr('uuuu_data')
+        if comp not in self.uuuu_data.inner_index:
+            raise ValueError(f"Component {comp} not found")
+
+        PhyTime = self.check_PhyTime(PhyTime)
+
+        data = self.uuuu_data[PhyTime,[comp]].copy()
+        if norm:
+            uu = self.uu_data[PhyTime,comp[:2]]
+            data = data/(uu*uu)
+            
+        fig, ax = data.plot_line(comp,time=PhyTime,fig=fig,channel_half=True,
+                                    ax=ax,line_kw=line_kw,**kwargs)
+
+
+        x_label = self.Domain.create_label(r"$y$")
+        if norm:
+            ax.set_ylabel(r"$\overline{%s'^4}/\overline{%s'^2}^2$"%(comp[0],comp[0]))
+        else:
+            ax.set_ylabel(r"$\overline{%s'^4}$"%(comp[0]))
+            
+        ax.set_xlabel(x_label)
+        
+        return fig, ax  
+    
+    def plot_skewness(self,comp,norm=False,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+            
+        self._check_attr('uuu_data')
+        if comp not in self.uuu_data.inner_index:
+            raise ValueError(f"Component {comp} not found")
+
+        PhyTime = self.check_PhyTime(PhyTime)
+
+        data = self.uuu_data[PhyTime,[comp]].copy()
+        if norm:
+            uu = self.uu_data[PhyTime,comp[:2]]
+            data = data/(uu**1.5)
+            
+        fig, ax = data.plot_line(comp,time=PhyTime,fig=fig,channel_half=True,
+                                    ax=ax,line_kw=line_kw,**kwargs)
+
+
+        x_label = self.Domain.create_label(r"$y$")
+        if norm:
+            ax.set_ylabel(r"$\overline{%s'^3}/\overline{%s'^2}^{3/2}$"%(comp[0],comp[0]))
+        else:
+            ax.set_ylabel(r"$\overline{%s'^3}$"%(comp[0]))
+            
+        ax.set_xlabel(x_label)
+        
+        return fig, ax  
     
 class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData):
 
@@ -838,7 +1131,16 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
             
         return cls.phase_average(*avg_list)
                 
+    def _extract_umean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)
+        return super()._extract_umean(path,its,None)
 
+    def _extract_uumean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)
+        return super()._extract_uumean(path,its,None)
+    
     def _extract_avg(self,path,its=None):
         super()._extract_avg(its,path,None)
     
