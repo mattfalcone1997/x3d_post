@@ -3,7 +3,7 @@ import types
 import numpy as np
 from abc import ABC
 import scipy
-
+from numbers import Number
 from .post._common import CommonTemporalData
 
 if scipy.__version__ >= '1.6':
@@ -53,15 +53,15 @@ class x3d_inst_xzt(xp.x3d_inst_xzt):
 
 class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
     
-    def conv_distance_calc(self):
+    def conv_distance_calc(self,t0=None):
             
         bulk_velo = self.bulk_velo_calc()
 
         time0 = self.times[0]
         times = [x-time0 for x in self.times]
 
-        accel_start = self.metaDF['temp_start_end'][0]
-        start_distance = bulk_velo[0]*(accel_start - time0)
+        start_index = x3d_avg_xzt._return_index(self,t0)
+        start_distance = integrate_simps(bulk_velo[:start_index],times[:start_index])
         conv_distance = np.zeros_like(bulk_velo)
         for i , _ in enumerate(bulk_velo):
             conv_distance[i] = integrate_simps(bulk_velo[:(i+1)],times[:(i+1)])
@@ -73,7 +73,7 @@ class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
 
         times = self.times
         dudt = np.gradient(U_infty,times,edge_order=2)
-        REN = self.metaDF['REN']
+        REN = self.metaDF['re']
 
         accel_param = (1/(REN*U_infty**3))*dudt
         return accel_param
@@ -98,10 +98,140 @@ class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
         #ax.grid()
         fig.tight_layout()
         return fig,ax
-    
+    def _get_data_attr(self):
+        data_dict__ = {x : self.__dict__[x] for x in self.__dict__ \
+                        if not isinstance(x,types.MethodType)}
+        return data_dict__
 _avg_xzt_class = x3d_avg_xzt
 
 
+class x3d_avg_xzt_conv(x3d_avg_xzt):
+
+    def __init__(self,other_avg: x3d_avg_xzt,t0: Number):
+        
+        self.__dict__.update(other_avg._get_data_attr())
+        
+        self.CoordDF['x'] = other_avg.conv_distance_calc(t0)
+        self._t0 = t0
+        
+    def conv_distance_calc(self):
+        return super().conv_distance_calc(self._t0)
+    
+    def _return_index(self,x_val):
+        return self.CoordDF.index_calc('x',x_val)
+
+    def _return_time_index(self,time):
+        return super()._return_index(time)
+    def _return_xaxis(self):
+        return self.CoordDF['x']
+
+    def plot_bulk_velocity(self,*args,**kwargs):
+        fig, ax = super().plot_bulk_velocity(*args,**kwargs)    
+        line = ax.get_lines()[-1]
+        xdata = self.conv_distance_calc()
+        line.set_xdata(xdata)
+        ax.set_xlim([xdata[0],xdata[-1]])
+
+        ax.set_xlabel(r"$x_{conv}$")
+
+        return fig, ax
+
+    def plot_accel_param(self,*args,**kwargs):
+        fig, ax = super().plot_accel_param(*args,**kwargs)    
+        line = ax.get_lines()[-1]
+        xdata = self.conv_distance_calc()
+        line.set_xdata(xdata)
+        ax.set_xlim([xdata[0],xdata[-1]])
+
+        ax.set_xlabel(r"$x_{conv}$")
+
+        return fig, ax
+
+    def plot_skin_friction(self,*args,**kwargs):
+        fig, ax = super().plot_skin_friction(*args,**kwargs)    
+        line = ax.get_lines()[-1]
+        xdata = self.conv_distance_calc()
+        line.set_xdata(xdata)
+        ax.set_xlim([xdata[0],xdata[-1]])
+
+        ax.set_xlabel(r"$x_{conv}$")
+
+        return fig, ax    
+
+    def plot_shape_factor(self,*args,**kwargs):
+        fig, ax = super().plot_shape_factor(*args,**kwargs)    
+        line = ax.get_lines()[-1]
+        xdata = self.conv_distance_calc()
+        line.set_xdata(xdata)
+        ax.set_xlim([xdata[0],xdata[-1]])
+
+        ax.set_xlabel(r"$x_{conv}$")
+
+        return fig, ax
+
+    def plot_Reynolds(self,comp,x_vals,*args,**kwargs):
+        fig, ax = super().plot_Reynolds(comp,x_vals,*args,**kwargs)
+        x_vals = self.CoordDF.get_true_coords('x',x_vals)
+        lines = ax.get_lines()[-len(x_vals):]
+        for line,x in zip(lines,x_vals):
+            line.set_xdata(self.CoordDF['x'])
+            line.set_label(r"$x_{conv}=%.3g$"%float(x))
+        
+        return fig, ax
+
+    def plot_Reynolds_x(self,*args,**kwargs):
+        fig, ax = super().plot_Reynolds_x(*args,**kwargs)
+        ax.get_lines()[-1].set_xdata(self.CoordDF['x'])
+        ax.set_xlabel(r"$x_{conv}$")
+        ax.relim()
+        ax.autoscale_view()
+        return fig, ax  
+
+    def plot_bulk_velocity(self,*args,**kwargs):
+        fig, ax = super().plot_bulk_velocity(*args,**kwargs)
+        ax.get_lines()[-1].set_xdata(self.CoordDF['x'])
+        ax.set_xlabel(r"$x_{conv}$")
+        ax.relim()
+        ax.autoscale_view()
+        return fig, ax
+
+    def plot_skin_friction(self,*args,**kwargs):
+        fig, ax = super().plot_skin_friction(*args,**kwargs)
+        ax.get_lines()[-1].set_xdata(self.CoordDF['x'])
+        ax.set_xlabel(r"$x_{conv}$")
+        ax.relim()
+        ax.autoscale_view()
+        return fig, ax
+
+    def plot_eddy_visc(self,x_vals, *args, **kwargs):
+        fig, ax =  super().plot_eddy_visc(x_vals,*args, **kwargs)
+
+        x_vals = self.CoordDF.get_true_coords('x',x_vals)
+        lines = ax.get_lines()[-len(x_vals):]
+        for line,x in zip(lines,x_vals):
+            line.set_label(r"$x_{conv}=%.3g$"%float(x))
+
+        return fig, ax
+
+    def plot_mean_flow(self,x_vals,*args,**kwargs):
+        fig, ax = super().plot_mean_flow(x_vals,*args,**kwargs)
+
+        x_vals = self.CoordDF.get_true_coords('x',x_vals)
+        lines = ax.get_lines()[-len(x_vals):]
+        for line,x in zip(lines,x_vals):
+            line.set_label(r"$x_{conv}=%.3g$"%float(x))
+            
+        return fig, ax
+
+    def plot_flow_wall_units(self,x_vals,*args,**kwargs):
+        fig, ax = super().plot_flow_wall_units(x_vals,*args,**kwargs)
+
+        x_vals = self.CoordDF.get_true_coords('x',x_vals)
+        lines = ax.get_lines()[-len(x_vals):]
+        for line,x in zip(lines,x_vals):
+            line.set_label(r"$x_{conv}=%.3g$"%float(x))
+
+        return fig, ax
 
 class x3d_budget_xzt(xp.x3d_budget_xzt,temp_accel_base):
     pass

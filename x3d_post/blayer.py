@@ -176,6 +176,7 @@ class meta_x3d(xp.meta_x3d):
 
 _meta_class = meta_x3d
 
+
 class x3d_inst_z(xp.x3d_inst_z):
     pass
 
@@ -187,4 +188,7 @@ class x3d_fluct_z(xp.x3d_fluct_z):
 _fluct_z_class = x3d_fluct_z
 
 class x3d_budget_z(xp.x3d_budget_z):
+    pass
+
+class x3d_quadrant_z(xp.x3d_quadrant_z):
     pass

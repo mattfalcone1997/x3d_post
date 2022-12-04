@@ -34,6 +34,10 @@ class _quadrant_base(CommonData,stathandler_base):
     def _get_nstat(self,it):
         return (it - self.metaDF['initstat2']) // self.metaDF['istatcalc']
     
+    @classmethod
+    def from_hdf(cls,fn,key=None):
+        return cls(fn,from_hdf=True,key=key)
+    
     @property
     def shape(self):
         return self._avg_data.shape
@@ -120,7 +124,7 @@ class x3d_quadrant_z(_quadrant_base,stat_z_handler):
         
         self.quad_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/quad_data')
         
-    def plot_line(self,h_list,coord, prop_dir,x_val=0,y_mode_wall=True,Quadrant=None,norm=False,fig=None,ax=None,line_kw=None,**kwargs):
+    def plot_line(self,h_list,coord, prop_dir,x_val=0,y_mode_wall=True,Quadrants=None,norm=False,fig=None,ax=None,line_kw=None,**kwargs):
         
         if prop_dir == 'x':
             if y_mode_wall:

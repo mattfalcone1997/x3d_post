@@ -740,18 +740,18 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         if comp not in self.uuuu_data.inner_index:
             raise ValueError(f"Component {comp} not found")
         
-        x_vals = check_list_vals(x_vals)
+        axis_vals = check_list_vals(axis_vals)
         
         if direction == 'x':
             if y_mode_wall:
                 CoordDF = self._avg_data.Wall_Coords(x_val)
-                y = [CoordDF.index_calc('y',x) for x in axis_vals]
+                y = [CoordDF.index_calc('y',x)[0] for x in axis_vals]
             else:
-                y = [self.CoordDF.index_calc('y',x) for x in axis_vals]
+                y = [self.CoordDF.index_calc('y',x)[0] for x in axis_vals]
                 
             vals = self.CoordDF['y'][y]
         else:
-            x = [self.CoordDF.index_calc('x',x) for x in axis_vals]
+            x = [self.CoordDF.index_calc('x',x)[0] for x in axis_vals]
             vals = self.CoordDF['x'][x]
 
 
@@ -778,7 +778,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
             ax.set_ylabel(r"$\overline{%s'^4}$"%(comp[0]))
 
         x_label = self.Domain.create_label(f"${direction}$")
-        ax[-1].set_xlabel(x_label)
+        ax.set_xlabel(x_label)
                 
         return fig, ax
 
@@ -788,18 +788,19 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         if comp not in self.uuu_data.inner_index:
             raise ValueError(f"Component {comp} not found")
         
-        x_vals = check_list_vals(x_vals)
+        axis_vals = check_list_vals(axis_vals)
         
         if direction == 'x':
             if y_mode_wall:
                 CoordDF = self._avg_data.Wall_Coords(x_val)
-                y = [CoordDF.index_calc('y',x) for x in axis_vals]
+                y = [CoordDF.index_calc('y',x)[0] for x in axis_vals]
             else:
-                y = [self.CoordDF.index_calc('y',x) for x in axis_vals]
+                y = [self.CoordDF.index_calc('y',x)[0] for x in axis_vals]
                 
             vals = self.CoordDF['y'][y]
         else:
-            x = [self.CoordDF.index_calc('x',x) for x in axis_vals]
+            x = [self.CoordDF.index_calc('x',x)[0] for x in axis_vals]
+            print(x)
             vals = self.CoordDF['x'][x]
 
 
@@ -826,7 +827,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
             ax.set_ylabel(r"$\overline{%s'^3}$"%(comp[0]))
 
         x_label = self.Domain.create_label(f"${direction}$")
-        ax[-1].set_xlabel(x_label)
+        ax.set_xlabel(x_label)
                 
         return fig, ax
 class x3d_avg_xz(_AVG_base,stat_xz_handler):
