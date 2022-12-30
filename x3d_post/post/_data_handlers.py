@@ -34,6 +34,14 @@ class stathandler_base(ABC):
 
         return os.path.join(stat_path,fn)
     
+    def _apply_symmetry(self,comp: str,array: np.ndarray,axis: int):
+        factor = (-1)**(comp.count('v')+comp.count('y'))
+        slicer = [slice(None)]*array.ndim
+        slicer[axis] = slice(None,None,-1)
+    
+        return 0.5*(array + factor*array[tuple(slicer)])
+        
+        
     def _check_attr(self,attr):
         if not hasattr(self,attr):
             raise AttributeError(f"Attribute {attr} must be "

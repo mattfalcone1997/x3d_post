@@ -98,7 +98,6 @@ class _quadrant_base(CommonData,stathandler_base):
         coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
 
         comps = [self._comp_calc(x,y) for x, y in product(h_quads,range(1,5))]
-        print(comps)
         index = self._get_index(it,comps)
         
         uvq = self._flowstruct_class(coorddata,

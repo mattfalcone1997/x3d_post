@@ -235,3 +235,12 @@ class x3d_avg_xzt_conv(x3d_avg_xzt):
 
 class x3d_budget_xzt(xp.x3d_budget_xzt,temp_accel_base):
     pass
+
+class x3d_mom_balance_xzt(xp.x3d_mom_balance_xzt,temp_accel_base):
+    pass
+
+class x3d_FIK_xzt(xp.x3d_FIK_xzt,temp_accel_base):
+    pass
+
+class x3d_spectra_xzt(xp.x3d_spectra_xzt,temp_accel_base):
+    pass

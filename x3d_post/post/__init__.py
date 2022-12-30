@@ -5,7 +5,14 @@ from ._average import (x3d_avg_z,
 
 from ._budget import (x3d_budget_z,
                       x3d_budget_xz,
-                      x3d_budget_xzt)
+                      x3d_budget_xzt,
+                      x3d_mom_balance_z,
+                      x3d_mom_balance_xz,
+                      x3d_mom_balance_xzt,
+                      x3d_FIK_z,
+                      x3d_FIK_xzt,
+                      x3d_Cf_Renard_z,
+                      )
 
 from ._instant import (x3d_inst_z,
                        x3d_inst_xz,
@@ -14,6 +21,11 @@ from ._instant import (x3d_inst_z,
 from ._quadrant_a import (x3d_quadrant_z,
                           x3d_quadrant_xz,
                           x3d_quadrant_xzt)
+
+from ._spectra import (x3d_spectra_xz,
+                       x3d_spectra_xzt,
+                       x3d_spectra_z,
+                       x3d_autocorr_x)
 
 from ._fluct import x3d_fluct_z
 from ._data_handlers import (read_stat_z_file,

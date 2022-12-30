@@ -66,7 +66,7 @@ class _AVG_base(CommonData,stathandler_base,ABC):
 
     @property
     def Domain(self):
-        return self.mean_data.Domain
+        return self._meta_data.Domain
 
     @property
     def _coorddata(self):
@@ -146,6 +146,10 @@ class _AVG_base(CommonData,stathandler_base,ABC):
 
         comps = ['u','v','w','p']
         index = self._get_index(it,comps)
+        
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
 
         mean_data = self._flowstruct_class(coorddata,
                                             l,
@@ -181,6 +185,10 @@ class _AVG_base(CommonData,stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         uu_data =  self._flowstruct_class(coorddata,
                                           l,
                                           index=index)
@@ -231,6 +239,10 @@ class _AVG_base(CommonData,stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         uuu_data =  self._flowstruct_class(coorddata,
                                            l,
                                            index=index)
@@ -245,7 +257,6 @@ class _AVG_base(CommonData,stathandler_base,ABC):
 
             l = (it_*l - it0_*l0) / (it_ - it0_)
         
-        print(l)
         geom = fp.GeomHandler(self.metaDF['itype'])
         coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
 
@@ -273,6 +284,11 @@ class _AVG_base(CommonData,stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
+
         uuu_data =  self._flowstruct_class(coorddata,
                                            l,
                                            index=index)
@@ -325,7 +341,7 @@ class _AVG_developing(_AVG_base):
         mom_thickness = 0.5*integrate_simps(theta_integrand,y_coords,axis=0)
         disp_thickness = 0.5*integrate_simps(delta_integrand,y_coords,axis=0)
         shape_factor = disp_thickness/mom_thickness
-        # print(mom_thickness,disp_thickness,shape_factor)
+
         return disp_thickness, mom_thickness, shape_factor
 
     def _velo_scale_calc(self,PhyTime):
@@ -553,9 +569,9 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         x_labels = [self.Domain.create_label(r"$x = %.3g$"%x) for x in x_vals]
         for i, x in enumerate(x_vals):
             if line_kw is None:
-                labels  = x_labels[i]
+                labels  = [x_labels[i]]
             else:
-                labels = line_kw.get('label',None)
+                labels = [line_kw.get('label',None)]
                             
             x_transform, y_transform = self._get_uplus_yplus_transforms(PhyTime, x)
             fig, ax = self.mean_data.plot_line('u','y',
@@ -800,7 +816,6 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
             vals = self.CoordDF['y'][y]
         else:
             x = [self.CoordDF.index_calc('x',x)[0] for x in axis_vals]
-            print(x)
             vals = self.CoordDF['x'][x]
 
 

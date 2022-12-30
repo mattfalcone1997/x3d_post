@@ -49,6 +49,14 @@ class meta_x3d(Common):
             h_quads = params['uv_quadrant']['h_quads']
             self.metaDF['h_quads'] = h_quads
         
+        if 'autocorrelation' in params:
+            shape = params['autocorrelation']['shape']
+            x_locs = params['autocorrelation']['x_locs']
+            
+            self.metaDF['autocorr_shape'] = shape
+            self.metaDF['autocorr_x_locs'] = x_locs
+            
+        self.Domain = fp.GeomHandler(itype)
 
         self._extract_run_params(path)
         
@@ -115,7 +123,7 @@ class meta_x3d(Common):
         h5_obj = fp.hdfHandler(fn,'r',key=key)
         self.NCL = h5_obj['NCL'][:]
         self.metaDF = dict(**h5_obj['metaDF'].attrs)
-    
+        self.Domain = fp.GeomHandler(self.metaDF['itype'])
         if 'run_params' in h5_obj.keys():
             self._run_params = pd.read_hdf(fn,key=key+'/run_params')
         return h5_obj

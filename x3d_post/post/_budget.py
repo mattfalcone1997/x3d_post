@@ -79,10 +79,6 @@ class budgetBase(CommonData,ABC):
     def _del_stat_data(self):
         pass
 
-    @abstractproperty
-    def _get_avg_data(self,it,path,it0):
-        pass
-
     @abstractmethod
     def _budget_extract(self,comp,it,path,it0):
         pass
@@ -180,6 +176,10 @@ class ReynoldsBudget_base(stathandler_base,ABC):
         
         return budget_data
 
+    @abstractproperty
+    def _get_avg_data(self,it,path,it0):
+        pass
+    
     @abstractmethod
     def _production_extract(self,*args,**kwargs):
         raise NotImplementedError
@@ -273,6 +273,10 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         uuu_data =  self._flowstruct_class(coorddata,
                                            l,
                                            index=index)
@@ -299,6 +303,10 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                  'dwdx','dwdy','dwdz']
 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         dudx_mean =  self._flowstruct_class(coorddata,
                                             l,
                                             index=index)  
@@ -332,6 +340,10 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         pu_data =  self._flowstruct_class(coorddata,
                                           l,
                                           index=index)
@@ -365,6 +377,10 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         pdudx_data =  self._flowstruct_class(coorddata,
                                              l,
                                              index=index)
@@ -408,6 +424,10 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                 i += 1
                 
         index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
         dudx2_data =  self._flowstruct_class(coorddata,
                                              l,
                                              index=index)
@@ -793,6 +813,7 @@ class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
             ax.set_xlabel(x_label)
 
         return fig, ax            
+_avg_xzt_class = x3d_avg_xzt
 
 class budget_xzt_base(budgetBase,CommonTemporalData):
     @classmethod
@@ -825,7 +846,6 @@ class budget_xzt_base(budgetBase,CommonTemporalData):
 
         self._del_stat_data()
     
-_avg_xzt_class = x3d_avg_xzt
 class x3d_budget_xzt(x3d_budget_xz,stat_xzt_handler,budget_xzt_base):
     _flowstruct_class = fp.FlowStruct1D_time
     def _budget_extract(self,comp):
@@ -916,7 +936,26 @@ class x3d_budget_xzt(x3d_budget_xz,stat_xzt_handler,budget_xzt_base):
         return fig, ax    
     
     
-class momentum_balance_base():
+class momentum_balance_base(budgetBase):
+    def __init__(self,comp,avg_data):
+        
+        self._get_stat_data(avg_data)
+
+        self.budget_data = self._budget_extract(comp)
+
+        self._del_stat_data()
+        
+    def _get_stat_data(self,avg_data):
+        
+        self.avg_data = avg_data
+        self.mean_data = self.avg_data.mean_data
+        self.uu_data = self.avg_data.uu_data
+
+
+    def _del_stat_data(self):
+        del self.mean_data
+        del self.uu_data
+                
     def _budget_extract(self,comp):
             
         advection = self._advection_extract(comp)
@@ -932,48 +971,10 @@ class momentum_balance_base():
         budget_index = ['advection','pressure gradient','viscous stresses','reynolds stresses']  
         phystring_index = [None]*4
 
-        budgetDF = self._flowstruct_class(self.avg_data._coorddata,budget_array,index =[phystring_index,budget_index])
+        data = self._flowstruct_class(self.avg_data._coorddata,budget_array,index =[phystring_index,budget_index])
         
-        return budgetDF
-
-    def _get_stat_data(self,it, path, it0):
-        
-        self.mean_data = self.avg_data.mean_data
-        self.uu_data = self.avg_data.uu_data
-
-        self.dudx_data = self._extract_dudxmean(path,it, it0)
-
-    def _del_stat_data(self):
-        del self.mean_data
-        del self.uu_data
-        del self.dudx_data
+        return data
  
-    def _extract_dudxmean(self,path,it,it0):
-        names = ['dudxmean','dudymean','dudzmean',
-                 'dvdxmean','dvdymean','dvdzmean',
-                 'dwdxmean','dwdymean','dwdzmean']
-
-        l = self._get_data(path,'dudx_mean',names,it,9)
-        if it0 is not None:
-            l0 = self._get_data(path,'dudx_mean',names,it0,9)
-            it_ = self._get_nstat(it)
-            it0_ = self._get_nstat(it0)
-
-            l = (it_*l - it0_*l0) / (it_ - it0_)
-
-        geom = fp.GeomHandler(self.metaDF['itype'])
-        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['dudx','dudy','dudz',
-                 'dvdx','dvdy','dvdz',
-                 'dwdx','dwdy','dwdz']
-
-        index = self._get_index(it,comps)
-        dudx_mean =  self._flowstruct_class(coorddata,
-                                            l,
-                                            index=index)  
-
-        return dudx_mean
     def _integate_budget(self,array):
         y = self.CoordDF['y']
         if self.Domain.is_channel:
@@ -992,12 +993,14 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
     _flowstruct_class = fp.FlowStruct2D
     def _advection_extract(self,comp):
         
-        UU = self.mean_data[comp]*self.mean_data['u']
-        UV = self.mean_data[comp]*self.mean_data['v']
+        U = self.mean_data['u']
+        V = self.mean_data['v']
+        U_comp = self.mean_data[comp]
 
-        advection_pre = np.stack([UU,UV],axis=0)
+        dudx = fp.Grad_calc(self.CoordDF,U_comp,'x')
+        dudy = fp.Grad_calc(self.CoordDF,U_comp,'y')
 
-        return -1*self.Domain.Vector_div_io(self.avg_data.CoordDF,advection_pre)
+        return -1.*(U*dudx + V*dudy)
 
     def _pressure_grad(self, comp):
         
@@ -1007,18 +1010,15 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
         return -1.0*self.Domain.Grad_calc(self.avg_data.CoordDF,pressure,dir)
 
     def _viscous_extract(self,  comp):
-        dir = chr(ord(comp)-ord('u') + ord('x'))
 
-        S_comp_1 = 0.5*(self.dudx_data['d'+comp+'dx'] +\
-                        self.dudx_data['dud'+dir])
-
-        S_comp_2 = 0.5*(self.dudx_data['d'+comp+'dy'] +\
-                        self.dudx_data['dvd'+dir])
-        
-        S_comp = np.stack([S_comp_1,S_comp_2],axis=0)
+        U_comp = self.mean_data[comp]
+        dudx = fp.Grad_calc(self.CoordDF,U_comp,'x')
+        d2udx2 = fp.Grad_calc(self.CoordDF,dudx,'x')
+        dudy = fp.Grad_calc(self.CoordDF,U_comp,'y')
+        d2udy2 = fp.Grad_calc(self.CoordDF,dudy,'y')
         REN = self.avg_data.metaDF['re']
         mu_star = 1.0
-        return (mu_star/REN)*self.Domain.Vector_div_io(self.avg_data.CoordDF,2*S_comp) 
+        return (mu_star/REN)*(d2udx2 + d2udy2)
 
     def _turb_transport(self, comp):
     
@@ -1034,11 +1034,12 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
         uu = self.uu_data[comp_uu]
         uv = self.uu_data[comp_uv]
 
-        turb_pre = np.stack([uu,uv],axis=0)
+        duudx = fp.Grad_calc(self.CoordDF,uu,'x')
+        duvdy = fp.Grad_calc(self.CoordDF,uv,'y')
+        
+        return -1*(duudx + duvdy)
 
-        return -1*self.Domain.Vector_div_io(self.CoordDF,turb_pre)
-
-    def plot_budget(self, x_list,PhyTime=None,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
+    def plot_balance(self, x_list,PhyTime=None,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
         PhyTime = self.avg_data.check_PhyTime(PhyTime)
         x_list = check_list_vals(x_list)
         x_list = self.CoordDF.get_true_coords('x',x_list)
@@ -1128,16 +1129,15 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
         return self.Domain.Grad_calc(self.avg_data.CoordDF,UV,'y')
 
     def _viscous_extract(self, comp):
-        dir = chr(ord(comp)-ord('u') + ord('x'))
-
-
-        S_comp_2 = (self.dudx_data[comp+'y'] +\
-                        self.dudx_data['v'+dir])
+        
+        U_comp = self.mean_data[comp]
+        dudy = fp.Grad_calc(self.CoordDF,U_comp,'y')
+        d2udy2 = fp.Grad_calc(self.CoordDF,dudy,'y')
         
         REN = self.avg_data.metaDF['re']
         mu_star = 1.0
         
-        return (mu_star/REN)*self.Domain.Grad_calc(self.avg_data.CoordDF,S_comp_2,'y')
+        return (mu_star/REN)*d2udy2
 
     def _turb_transport(self, comp):
         comp_uv = comp + 'v'
@@ -1162,16 +1162,15 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
         return -( (1/REN)*d2u_dy2 - duv_dy )
     
 
-    def plot_budget(self, PhyTime=None,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.avg_data.check_PhyTime(PhyTime)
+    def plot_balance(self, PhyTime=None,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
+        PhyTime = self.budget_data.check_outer(PhyTime,err=KeyError())
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
         budget_terms = self._check_terms(budget_terms)
         line_kw= update_line_kw(line_kw)
 
         for comp in budget_terms:
-                
             line_kw['label'] = self.title_with_math(comp)
-            fig, ax = self.budget_data.plot_line(comp,PhyTime=PhyTime,channel_half=True,
+            fig, ax = self.budget_data.plot_line(comp,time=PhyTime,channel_half=True,
                                             fig=fig,ax=ax,line_kw=line_kw)
 
         if mpl.rcParams['text.usetex'] == True:
@@ -1185,7 +1184,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
         return fig, ax
 
     def plot_integrated_budget(self,budget_terms=None,PhyTime=None, fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.avg_data.check_PhyTime(PhyTime)
+        PhyTime = self.budget_data.check_outer(PhyTime,err=KeyError())
         budget_terms = self._check_terms(budget_terms)
         line_kw= update_line_kw(line_kw)
 
@@ -1196,7 +1195,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
             budget = self.budget_data[PhyTime,comp]
 
             int_budget = self._integate_budget(budget)
-            fig, ax = self.budgetDF.plot_line_data(int_budget,
+            fig, ax = self.budget_data.plot_line_data(int_budget,
                                                     time=PhyTime,
                                                     channel_half=True,
                                                     fig=fig,
@@ -1247,12 +1246,18 @@ class x3d_mom_balance_xzt(x3d_mom_balance_xz,budget_xzt_base):
         times = self.avg_data.times
         return-1.*np.gradient(u,times,axis=-1)
     
-    def plot_budget(self,times_list, budget_terms=None,fig=None, ax =None,line_kw=None,**kwargs):
+    def _pressure_grad(self, comp):
+        p_grad = super()._pressure_grad(comp)
+        u = self.mean_data[comp]
+        times = self.avg_data.times
+        return p_grad + np.gradient(u,times,axis=-1)
+        
+    def plot_balance(self,times_list, budget_terms=None,fig=None, ax =None,line_kw=None,**kwargs):
         times_list = check_list_vals(times_list)
         
         fig, ax, single_input = self._create_budget_axes(times_list,fig,ax,**kwargs)
         for i,time in enumerate(times_list):
-            fig, ax[i] = super().plot_budget(PhyTime=time,budget_terms=budget_terms,fig=fig,ax=ax[i],line_kw=line_kw)
+            fig, ax[i] = super().plot_balance(PhyTime=time,budget_terms=budget_terms,fig=fig,ax=ax[i],line_kw=line_kw)
 
             time_label = self.Domain.timeStyle
             ax[i].set_title(r"$%s = %.3g$"%(time_label,time),loc='right')
@@ -1290,6 +1295,31 @@ class x3d_mom_balance_xzt(x3d_mom_balance_xz,budget_xzt_base):
     
 class _FIK_base(budgetBase):
     _flowstruct_class = None
+    def __init__(self,avg_data):
+        
+        self._get_stat_data(avg_data)
+
+        self.budget_data = self._budget_extract()
+
+        self._del_stat_data()
+    def _integrate(self,y,x):
+        if self.Domain.is_channel:
+            mid = (self.NCL[1]+1)//2
+            return simps(y[:mid],x[:mid],axis=0)
+        else:
+            return simps(y,x,axis=0)
+        
+    def _get_stat_data(self,avg_data):
+        
+        self.avg_data = avg_data
+        self.mean_data = self.avg_data.mean_data
+        self.uu_data = self.avg_data.uu_data
+
+
+    def _del_stat_data(self):
+        del self.mean_data
+        del self.uu_data
+        
     def _budget_extract(self):
         laminar = self._laminar_extract()
         turbulent = self._turbulent_extract()
@@ -1309,25 +1339,30 @@ class _FIK_base(budgetBase):
     def _scale_vel(self,PhyTime):
         pass
     
-    def _laminar_extract(self,PhyTime):
+    def _laminar_extract(self):
     
-        bulk = self._scale_vel(PhyTime)
+        bulk = self._scale_vel()
         REN = self.avg_data.metaDF['re']
         return 6.0/(REN*bulk)
     
+    @abstractmethod
+    def _turbulent_extract(self):
+        pass
+    
+    @abstractmethod
+    def _inertia_extract(self):
+        pass
 class _FIK_developing_base(_FIK_base):
 
     def _turbulent_extract(self):
 
         bulk = self._scale_vel()
-        y_coords = self.avg_data.CoordDF['y']
+        y_coords = self.avg_data.CoordDF['y']-1
         uv = self.avg_data.uu_data['uv']
 
-        turbulent = np.zeros_like(uv)
-        for i,y in enumerate(y_coords):
-            turbulent[i] =    6*y*uv[i]
+        turbulent =    np.squeeze(y_coords[:,None]*uv)
 
-        return simps(turbulent,y,axis=0)/bulk**2
+        return 6.*self._integrate(turbulent,y_coords)/bulk**2
 
     @abstractmethod
     def _inertia_extract(self,PhyTime):
@@ -1363,14 +1398,14 @@ class x3d_FIK_z(_FIK_developing_base):
         return self.avg_data.bulk_velo_calc()
     
     def _inertia_extract(self):
-        y = self.avg_data.CoordDF['y']
+        y_coords = self.avg_data.CoordDF['y']-1
 
         bulk = self._scale_vel()
 
         pressure = self.avg_data.mean_data['p']
         pressure_grad_x = self.Domain.Grad_calc(self.avg_data.CoordDF,pressure,'x')
 
-        p_prime2 = pressure_grad_x - simps(pressure_grad_x,y,axis=0)
+        p_prime2 = pressure_grad_x - self._integrate(pressure_grad_x,y_coords)
 
         u_mean2 = self.avg_data.mean_data['u']**2
         uu = self.avg_data.uu_data['uu']
@@ -1386,15 +1421,15 @@ class x3d_FIK_z(_FIK_developing_base):
                     self.Domain.Grad_calc(self.avg_data.CoordDF,U_mean,'x'),'x')
 
         I_x = d_UU_dx + d_uv_dy - (1/REN)*d2u_dx2
-        I_x_prime  = I_x -  simps(I_x,y,axis=0)
+        I_x_prime  = I_x -  self._integrate(I_x,y_coords)
 
 
         out = np.zeros_like(U_mean)
-        for i,y in enumerate(y):
+        for i,y in enumerate(y_coords):
             out[i] = (p_prime2 + I_x_prime)[i,:]*y**2
 
 
-        return -3.0*simps(out,y,axis=0)/(bulk**2) 
+        return -3.0*self._integrate(out,y_coords)/(bulk**2) 
     
     def plot(self,*args,**kwargs):
         fig, ax = super().plot(*args,**kwargs)
@@ -1406,44 +1441,195 @@ class x3d_FIK_xzt(_FIK_developing_base):
         self.avg_data = avg_data
         self.budget_data = self._budget_extract()
     
+    @property
+    def times(self):
+        self.budget_data.times
+        
     def _scale_vel(self):
         return self.avg_data.bulk_velo_calc()
     
 
     def _inertia_extract(self):
-        y_coords = self.avg_data.CoordDF['y']
+        y_coords = self.avg_data.CoordDF['y']-1.0
 
         bulk = self._scale_vel()
 
         U_mean = self.avg_data.mean_data['u']
         times = self.avg_data._return_xaxis()
 
-        REN = self.avg_data.metaDF['REN']
-        d2u_dy2 = self.Domain.Grad_calc(self.avg_data.CoordDF,
-                    self.Domain.Grad_calc(self.avg_data.CoordDF,U_mean,'y'),'y')
+        REN = self.avg_data.metaDF['re']
+        d2u_dy2 = fp.Grad_calc(self.avg_data.CoordDF,
+                    fp.Grad_calc(self.avg_data.CoordDF,U_mean,'y'),'y')
         
         uv = self.avg_data.uu_data['uv']
-        duv_dy = self.Domain.Grad_calc(self.avg_data.CoordDF,uv,'y')
+        duv_dy = fp.Grad_calc(self.avg_data.CoordDF,uv,'y')
         dudt = np.gradient(U_mean,times,axis=-1,edge_order=2)
 
         dpdx = (1/REN)*d2u_dy2 - duv_dy  - dudt
-        raise Exception("Check this pls")
-        dp_prime_dx = dpdx - simps((1/REN)*d2u_dy2 - duv_dy,y,axis=0) 
+        # raise Exception("Check this pls")
+        dp_prime_dx = dpdx - self._integrate((1/REN)*d2u_dy2 - duv_dy,y_coords) 
 
         UV = self.avg_data.mean_data['u']*self.avg_data.mean_data['v']
-        I_x = self.Domain.Grad_calc(self.avg_data.CoordDF,UV,'y')
+        I_x = fp.Grad_calc(self.avg_data.CoordDF,UV,'y')
 
-        I_x_prime = I_x - simps(I_x,y,axis=0)
+        I_x_prime = I_x - self._integrate(I_x,y_coords)
 
         
         out = np.zeros(U_mean.shape)
         for i,y in enumerate(y_coords):
             out[i] = (I_x_prime + dp_prime_dx + dudt)[i]*y**2
 
-        return -3.0*simps(I_x,y,axis=0)/(bulk**2)
+        return -3.0*self._integrate(out,y_coords)/(bulk**2)
 
     def plot(self,budget_terms=None,*args,**kwargs):
         fig, ax = super().plot(budget_terms,PhyTime=None,*args,**kwargs)
         ax.set_xlabel(r"$t^*$")
+        return fig, ax
+    
+class Cf_Renard_base(budgetBase):
+    _flowstruct_class = None
+    def __init__(self,avg_data,boundary_layer=True):
+        self.avg_data = avg_data
+        self.budget_data = self._budget_extract(boundary_layer=boundary_layer)
+        
+    def _get_stat_data(self,avg_data):
+        
+        self.avg_data = avg_data
+        self.mean_data = self.avg_data.mean_data
+        self.uu_data = self.avg_data.uu_data
+
+
+    def _del_stat_data(self):
+        del self.mean_data
+        del self.uu_data
+        
+    def _budget_extract(self,boundary_layer=True):
+        dissipation_y = self._dissipation_y_extract()
+        dissipation_x = self._dissipation_x_extract()
+        production_y = self._production_y_extract()
+        production_x = self._production_x_extract()
+        kinetic_x = self._kinetic_energy_x_extract()
+        kinetic_y = self._kinetic_energy_y_extract()
+        pressure = self._pressure_extract()
+
+        if boundary_layer:
+            array_concat = [dissipation_y,production_y,kinetic_x+kinetic_y]
+            budget_index = ['dissipation', 'production','kinetic']
+        else:
+            array_concat = [dissipation_y,dissipation_x,production_y,production_x,
+                            kinetic_x,kinetic_y,pressure]
+            budget_index = ['dissipation y', 'dissipation x','production y',
+                            'production x','kinetic x','kinetic y', 'pressure']
+        budget_array = np.stack(array_concat,axis=0)
+        phystring_index = [None]*len(budget_array)
+
+        budget = fp.datastruct(budget_array,index =[phystring_index,budget_index])
+
+        return budget 
+    
+    @abstractmethod
+    def _scale_vel(self):
+        pass
+    
+    def _dissipation_y_extract(self):
+        u_mean = self.avg_data.mean_data['u']
+        re = self.metaDF['re']
+        dudy = fp.Grad_calc(self.CoordDF,u_mean,'y')
+        dissipation = dudy*dudy/re
+        
+        y = self.CoordDF['y']
+        u = self._scale_vel()
+        return 2.0*simps(dissipation,y,axis=0)/(u*u*u)
+
+    def _dissipation_x_extract(self):
+        u = self._scale_vel()
+
+        u_mean = self.avg_data.mean_data['u'] - u
+        re = self.metaDF['re']
+        dudx = fp.Grad_calc(self.CoordDF,u_mean,'x')
+        dissipation = dudx*dudx/re
+        
+        y = self.CoordDF['y']
+        return 2.0*simps(dissipation,y,axis=0)/(u*u*u)
+
+    
+    def _production_y_extract(self):
+        u_mean = self.avg_data.mean_data['u']
+        uv_mean = self.avg_data.uu_data['uv']
+        dudy = fp.Grad_calc(self.CoordDF,u_mean,'y')
+
+        production = - uv_mean*dudy
+        y = self.CoordDF['y']
+        u = self._scale_vel()
+        
+        return 2.0*simps(production,y,axis=0)/(u*u*u)
+
+    def _production_x_extract(self):
+        u = self._scale_vel()
+        u_mean = self.avg_data.mean_data['u'] - u
+        uu_mean = self.avg_data.uu_data['uu']
+        dudx = fp.Grad_calc(self.CoordDF,u_mean,'x')
+
+        production = - uu_mean*dudx
+        y = self.CoordDF['y']
+        return 2.0*simps(production,y,axis=0)/(u*u*u)
+
+    def _kinetic_energy_y_extract(self):
+        u = self._scale_vel()
+        u_mean = self.avg_data.mean_data['u']
+        v_mean = self.avg_data.mean_data['v']
+        
+        K = 0.5*u_mean*u_mean
+        
+        v_dKdy = v_mean*fp.Grad_calc(self.CoordDF,K,'y') \
+                -u*v_mean*fp.Grad_calc(self.CoordDF,u_mean,'y')
+        y = self.CoordDF['y']
+        return 2.0*simps(v_dKdy,y,axis=0)/(u*u*u)
+
+    def _kinetic_energy_x_extract(self):
+        u = self._scale_vel()
+        u_mean = self.avg_data.mean_data['u']
+        
+        K = 0.5*u_mean*u_mean
+        
+        u_dKdx = (u_mean-u)*fp.Grad_calc(self.CoordDF,K,'x')
+        y = self.CoordDF['y']
+        return 2.0*simps(u_dKdx,y,axis=0)/(u*u*u)
+    
+    def _pressure_extract(self):
+        u = self._scale_vel()
+        u_mean = self.avg_data.mean_data['u'] - u
+        p_mean = self.avg_data.mean_data['p']
+        u_dpdx = u_mean*fp.Grad_calc(self.CoordDF,p_mean,'x')
+        y = self.CoordDF['y']
+        return 2.0*simps(u_dpdx,y,axis=0)/(u*u*u)
+    
+    @abstractmethod
+    def plot(self,budget_terms=None,plot_total=True,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
+
+        budget_terms = self._check_terms(budget_terms)
+        
+        kwargs = update_subplots_kw(kwargs,figsize=[10,5])
+        fig, ax  = create_fig_ax_with_squeeze(fig,ax,**kwargs)
+
+        line_kw= update_line_kw(line_kw)
+        xaxis_vals = self.avg_data._return_xaxis()
+
+        for comp in budget_terms:
+            budget_term = self.budget_data[comp].copy()
+                
+            label = self.title_with_math(comp)
+            ax.cplot(xaxis_vals,budget_term,label=label,**line_kw)
+        if plot_total:
+            ax.cplot(xaxis_vals,np.sum(self.budget_data.values,axis=0),label="Total",**line_kw)
+
+        return fig, ax
+class x3d_Cf_Renard_z(Cf_Renard_base):
+    def _scale_vel(self):
+        return self.avg_data.bulk_velo_calc()
+    
+    def plot(self,*args,**kwargs):
+        fig, ax = super().plot(*args,**kwargs)
+        ax.set_xlabel(r"$x$")
         return fig, ax
     

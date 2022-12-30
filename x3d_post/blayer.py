@@ -86,7 +86,6 @@ class x3d_avg_z(xp.x3d_avg_z):
                 
         
     def _tau_calc(self,PhyTime):
-        
         u_velo = self.mean_data[PhyTime,'u']
         ycoords = self.CoordDF['y']
         
@@ -190,5 +189,19 @@ _fluct_z_class = x3d_fluct_z
 class x3d_budget_z(xp.x3d_budget_z):
     pass
 
+class x3d_mom_balance_z(xp.x3d_mom_balance_z):
+    pass
+
+class x3d_FIK_z(xp.x3d_FIK_z):
+    pass
+
+class x3d_Cf_Renard_z(xp.x3d_Cf_Renard_z):
+    pass
 class x3d_quadrant_z(xp.x3d_quadrant_z):
+    pass
+
+class x3d_spectra_z(xp.x3d_spectra_z):
+    pass
+
+class x3d_autocorr_x(xp.x3d_autocorr_x):
     pass
