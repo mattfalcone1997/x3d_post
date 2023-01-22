@@ -287,9 +287,13 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                  'dvdxmean','dvdymean','dvdzmean',
                  'dwdxmean','dwdymean','dwdzmean']
 
-        l = self._get_data(path,'dudx_mean',names,it,9)
+        comps = ['dudx','dudy','dudz',
+                 'dvdx','dvdy','dvdz',
+                 'dwdx','dwdy','dwdz']
+
+        l = self._get_data(path,'dudx_mean',names,it,9,comps=comps)
         if it0 is not None:
-            l0 = self._get_data(path,'dudx_mean',names,it0,9)
+            l0 = self._get_data(path,'dudx_mean',names,it0,9,comps=comps)
             it_ = self._get_nstat(it)
             it0_ = self._get_nstat(it0)
 
@@ -297,11 +301,7 @@ class ReynoldsBudget_base(stathandler_base,ABC):
 
         geom = fp.GeomHandler(self.metaDF['itype'])
         coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['dudx','dudy','dudz',
-                 'dvdx','dvdy','dvdz',
-                 'dwdx','dwdy','dwdz']
-
+        
         index = self._get_index(it,comps)
         if self.Domain.is_channel:
             for i,comp in enumerate(index[1]):
@@ -351,10 +351,11 @@ class ReynoldsBudget_base(stathandler_base,ABC):
 
     def _extract_pdudxmean(self,path,it,it0):
         names = ['pdudxmean','pdvdymean','pdwdzmean']
-
-        l = self._get_data(path,'pdudx_mean',names,it,3)
+        comps = ['pdudx','pdvdy','pdwdz']
+        
+        l = self._get_data(path,'pdudx_mean',names,it,3,comps=comps)
         if it0 is not None:
-            l0 = self._get_data(path,'pdudx_mean',names,it0,3)
+            l0 = self._get_data(path,'pdudx_mean',names,it0,3,comps=comps)
             it_ = self._get_nstat(it)
             it0_ = self._get_nstat(it0)
 
@@ -362,9 +363,7 @@ class ReynoldsBudget_base(stathandler_base,ABC):
 
         geom = fp.GeomHandler(self.metaDF['itype'])
         coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['pdudx','pdvdy','pdwdz']
-
+        
         self._check_attr('mean_data')
         self._check_attr('dudx_data')
         i = 0
@@ -392,7 +391,12 @@ class ReynoldsBudget_base(stathandler_base,ABC):
                 'dudydudymean', 'dudydvdymean', 'dudydwdymean', 
                 'dvdydvdymean', 'dvdydwdymean', 'dwdydwdymean']
         
-        l = self._get_data(path,'dudxdudx_mean',names,it,12)
+        comps = ['dudxdudx','dudxdvdx', 'dudxdwdx', 
+                'dvdxdvdx', 'dvdxdwdx', 'dwdxdwdx',
+                'dudydudy', 'dudydvdy', 'dudydwdy', 
+                'dvdydvdy', 'dvdydwdy', 'dwdydwdy']
+                
+        l = self._get_data(path,'dudxdudx_mean',names,it,12,comps=comps)
         
         if it0 is not None:
             l0 = self._get_data(path,'dudxdudx_mean',names,it0,12)
@@ -404,12 +408,7 @@ class ReynoldsBudget_base(stathandler_base,ABC):
 
         geom = fp.GeomHandler(self.metaDF['itype'])
         coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
-
-        comps = ['dudxdudx','dudxdvdx', 'dudxdwdx', 
-                'dvdxdvdx', 'dvdxdwdx', 'dwdxdwdx',
-                'dudydudy', 'dudydvdy', 'dudydwdy', 
-                'dvdydvdy', 'dvdydwdy', 'dwdydwdy']
-
+        
         self._check_attr('dudx_data')
         i = 0
         for time in self.mean_data.times:

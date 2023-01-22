@@ -378,8 +378,8 @@ class _AVG_developing(_AVG_base):
         U_mean = self.mean_data[PhyTime,'u']
         V_mean = self.mean_data[PhyTime,'v']
 
-        dUdy = fp.Grad_calc(self.CoordDF,U_mean,'y')
-        dVdx = fp.Grad_calc(self.CoordDF,V_mean,'x')
+        dUdy = fp.Grad_calc(self.mean_data.CoordDF,U_mean,'y')
+        dVdx = fp.Grad_calc(self.mean_data.CoordDF,V_mean,'x')
 
         re = self.metaDF['re']
 
@@ -568,10 +568,11 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
 
         x_labels = [self.Domain.create_label(r"$x = %.3g$"%x) for x in x_vals]
         for i, x in enumerate(x_vals):
-            if line_kw is None:
-                labels  = [x_labels[i]]
+
+            if line_kw is not None:
+                labels = [line_kw.get('label',x_labels[i])]
             else:
-                labels = [line_kw.get('label',None)]
+                labels  = [x_labels[i]]
                             
             x_transform, y_transform = self._get_uplus_yplus_transforms(PhyTime, x)
             fig, ax = self.mean_data.plot_line('u','y',
@@ -642,7 +643,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
             if line_kw is not None:
                 if 'label' in line_kw:
                     labels = None
-                    
+
             fig, ax = self.uu_data.plot_line(comp,'y',x,time=PhyTime,labels=labels,
                                              fig=fig,channel_half=True,
                                              transform_ydata=transform_y,

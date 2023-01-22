@@ -6,6 +6,7 @@ import json
 import xml.etree.ElementTree as ET
 import os
 from ..utils import check_path
+import time
 
 from numbers import Number
 def read_parameters(path):
@@ -34,8 +35,28 @@ class stathandler_base(ABC):
 
         return os.path.join(stat_path,fn)
     
-    def _apply_symmetry(self,comp: str,array: np.ndarray,axis: int):
+    def _fix_dumb_error(self,comps: list[str],axis,data,check,factor):
+        slicer = [slice(None)]*(data.ndim-1)
+        if axis is not None:
+            slicer[axis] = slice(1,-1)
+        for i, comp in enumerate(comps):
+            n = comp.count(check)
+            if n > 0:
+                multiplier = factor**n
+                data[i][tuple(slicer)] *= multiplier
+        return data
+    
+    def _apply_symmetry(self,comp: str,array: np.ndarray,axis: int,noflip: list[str]= None,exclude: list[str]= None):
+
+        if exclude is not None:
+            if comp in exclude:
+                return array
+              
         factor = (-1)**(comp.count('v')+comp.count('y'))
+        if noflip is not None:
+            if comp in noflip:
+                factor = 1.0
+
         slicer = [slice(None)]*array.ndim
         slicer[axis] = slice(None,None,-1)
     
@@ -75,12 +96,44 @@ class stathandler_base(ABC):
     def _get_new_data(self,path,name,it,size):
         pass
     
-    def _get_data(self,path,name,old_names,it,size):
-        if fp.rcParams['new_data']:
-            return self._get_new_data(path,name,it,size)
-        else:
-            return self._get_old_data(path,old_names,it)
+    def _correct_mean_gradients(self,fpath,data,comps):
+        
+        REF_DATE = [2023,1,13,15,0,0]
+
+        mod_date = time.localtime(os.stat(fpath).st_mtime)[:6]
+        try:
+            check1 = [a>b for a, b in zip(REF_DATE,mod_date)].index(True)
+        except ValueError:
+            check1 = 7
+        try:
+            check2 = [a<b for a, b in zip(REF_DATE,mod_date)].index(True)
+        except ValueError:
+            check2 = 7
+        
+        
+        make_correct =  check2 > check1
+                
+        if fp.rcParams['correct_gradients'] and make_correct:
+            print("x3d_post is correcting mean gradient calculations")
+            data = self._fix_dumb_error(comps,1,data,'dx',0.5)
+            factor = 0.5*(self.NCL[0]/(self.NCL[0]-2.))
+            data = self._fix_dumb_error(comps,None,data,'dz',factor)
             
+        return data
+
+    def _get_data(self,path,name,old_names,it,size,comps=None):
+        if fp.rcParams['new_data']:
+            data = self._get_new_data(path,name,it,size)
+        else:
+            data = self._get_old_data(path,old_names,it)
+        
+        fpath = self._get_stat_file_z(path,name,it)
+
+                
+        if comps is not None:
+            data = self._correct_mean_gradients(fpath,data,comps)
+            
+        return data
     def _get_nstat(self,it):
         return (it - self.metaDF['initstat']) // self.metaDF['istatcalc']
 
@@ -103,8 +156,8 @@ class stat_z_handler(stathandler_base,ABC):
     
 class stat_xz_handler(stat_z_handler,ABC):
     _flowstruct_class = fp.FlowStruct1D
-    def _get_data(self,*args):
-        l = super()._get_data(*args)
+    def _get_data(self,*args,**kwargs):
+        l = super()._get_data(*args,**kwargs)
         return l.mean(axis=-1)        
 
 class stat_xzt_handler(stat_xz_handler,ABC):

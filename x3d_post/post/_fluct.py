@@ -34,7 +34,11 @@ class _fluct_base(CommonData):
     @abstractmethod
     def _fluct_extract(self,*args,**kwargs):
         pass
-
+    
+    @property
+    def _meta_data(self):
+        return self.avg_data._meta_data
+    
     @property
     def _coorddata(self):
         return self.fluct_data._coorddata
@@ -280,7 +284,6 @@ class x3d_fluct_z(_fluct_base):
                     inst_data += self._module._inst_z_class(time_inst_data,path_to_folder=path_to_folder,avg_data=avg_data,*args,**kwargs)
         
         self.avg_data = inst_data._avg_data
-        self._meta_data = inst_data._meta_data
 
         self.fluct_data = self._fluct_data_calc(inst_data,self.avg_data)
 

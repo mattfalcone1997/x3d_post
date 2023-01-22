@@ -56,6 +56,10 @@ class meta_x3d(Common):
             self.metaDF['autocorr_shape'] = shape
             self.metaDF['autocorr_x_locs'] = x_locs
             
+        if 'spectra_corr' in params:
+            ylocs = params['spectra_corr']['y_locs']
+            self.metaDF['spectra_ylocs'] = ylocs
+            
         self.Domain = fp.GeomHandler(itype)
 
         self._extract_run_params(path)

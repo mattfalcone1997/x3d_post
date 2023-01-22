@@ -120,7 +120,7 @@ class x3d_avg_z(xp.x3d_avg_z):
         PhyTime = self.check_PhyTime(PhyTime)
 
         U_infty = self._velo_scale_calc(PhyTime)
-        U_infty_grad = np.gradient(U_infty,self.CoordDF['x'])
+        U_infty_grad = np.gradient(U_infty,self.mean_data.CoordDF['x'])
 
         re = self.metaDF['re']
 
