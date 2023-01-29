@@ -12,6 +12,8 @@ from ._budget import (x3d_budget_z,
                       x3d_FIK_z,
                       x3d_FIK_xzt,
                       x3d_Cf_Renard_z,
+                      x3d_Cf_Renard_xz,
+                      x3d_Cf_Renard_xzt
                       )
 
 from ._instant import (x3d_inst_z,

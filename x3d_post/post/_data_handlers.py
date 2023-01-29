@@ -127,10 +127,12 @@ class stathandler_base(ABC):
         else:
             data = self._get_old_data(path,old_names,it)
         
-        fpath = self._get_stat_file_z(path,name,it)
-
                 
         if comps is not None:
+            if isinstance(it,list):
+                fpath = self._get_stat_file_z(path,name,it[0])
+            else:
+                fpath = self._get_stat_file_z(path,name,it)
             data = self._correct_mean_gradients(fpath,data,comps)
             
         return data

@@ -3,7 +3,9 @@ from ._average import (x3d_avg_xz,
                        x3d_avg_xzt,
                        x3d_avg_z)
 from ._data_handlers import (stathandler_base,
-                             stat_xz_handler)
+                             stat_xz_handler,
+                             stat_z_handler)
+
 import os
 import numpy as np
 import flowpy as fp
@@ -206,18 +208,18 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         self.spectra_data = self._get_spectra_data(it,path,it0)
         
 
-    def get_autocorrelation(self,comps=None):
+    def get_autocorrelation(self,comps=None,time=None):
         if comps is None:
             comps = self.spectra_data.inner_index
 
         shape = (len(comps),*self.NCL[::-1])
         l = np.zeros(shape)
         
-        d_kz = np.diff(self.spectra_data.CoordDF['k_x'])[0]
-        d_kx = np.diff(self.spectra_data.CoordDF['k_z'])[0]
+        d_kz = np.diff(self.spectra_data.CoordDF['k_z'])[0]
+        d_kx = np.diff(self.spectra_data.CoordDF['k_x'])[0]
         
         for i, comp in enumerate(comps):
-            data = self.spectra_data[comp]
+            data = self.spectra_data[time,comp]
             autocorr =irfft(ifft(data,axis=2,norm='forward'),axis=0,norm='forward')
 
             l[i] = np.fft.ifftshift(autocorr,axes=(0,2))*d_kx*d_kz
@@ -251,13 +253,15 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
                                     wall_normal_line='y',
                                     index=index)
     
-    def get_spectra_plot(self,comps=None):
+    def get_spectra_plot(self,comps=None,time=None):
         if comps == None:
             comps = self.spectra_data.inner_index
         
+        comps = list(comps)
         mid_x = self.spectra_data.shape[-1]//2 +1
-
-        spectra = self.spectra_data.values[:,:,:,:mid_x]
+        
+        data = self.spectra_data[time,comps]
+        spectra = data.values[:,:,:,:mid_x]
         K_x = np.abs(self.spectra_data.CoordDF['k_x'][:mid_x])
         K_z = np.abs(self.spectra_data.CoordDF['k_z'])
         coorddata = self.spectra_data._coorddata.copy()
@@ -268,20 +272,20 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
                                     spectra,
                                     data_layout=('k_z','y','k_x'),
                                     wall_normal_line='y',
-                                    index=self.spectra_data.index)
+                                    index=data.index)
                 
-    def get_spectra_1d_x(self,comps=None):
+    def get_spectra_1d_x(self,comps=None,time=None):
         if comps == None:
             comps = self.spectra_data.inner_index
             
-        spectra_data = self.get_spectra_plot(comps=comps)
+        spectra_data = self.get_spectra_plot(comps=comps,time=time)
         shape = (len(comps),self.NCL[1],self.NCL[0]//2+1)
         l = np.zeros(shape)
         z_coords = self.CoordDF['z']
 
         d_kz = 2*np.pi/(z_coords[-1]-z_coords[0])
         for i, comp in enumerate(comps):
-            data = spectra_data[comp]
+            data = spectra_data[time,comp]
             
             l[i] = np.sum(np.real(data),axis=0)*d_kz
         
@@ -297,11 +301,11 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
                                 wall_normal_line='y',
                                 index=index)
         
-    def get_spectra_1d_z(self,comps=None):
+    def get_spectra_1d_z(self,comps=None,time=None):
         if comps == None:
             comps = self.spectra_data.inner_index
             
-        spectra_data = self.get_spectra_plot(comps=comps)
+        spectra_data = self.get_spectra_plot(comps=comps,time=time)
         shape = (len(comps),self.NCL[2]//2+1,self.NCL[1])
         l = np.zeros(shape)
         
@@ -328,12 +332,9 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
     def get_energy(self,comps=None):
         if comps == None:
             comps = self.spectra_data.inner_index
-        
-        z_coords = self.CoordDF['z']
-        x_coords = self.CoordDF['x']
 
-        d_kz = np.diff(self.spectra_data.CoordDF['k_x'])[0]
-        d_kx = np.diff(self.spectra_data.CoordDF['k_z'])[0]
+        d_kz = np.diff(self.spectra_data.CoordDF['k_z'])[0]
+        d_kx = np.diff(self.spectra_data.CoordDF['k_x'])[0]
         
         l = np.zeros((len(comps),self.spectra_data.shape[1]))
         shape = (2*(self.spectra_data.shape[0]-1),*self.spectra_data.shape[1:])
@@ -343,7 +344,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
             data[self.spectra_data.shape[0]:]  = self.spectra_data[comp][1:-1][::-1]
             # l[i] = simps(simps(data,dx=d_kx,axis=2),
             #                    dx=d_kz,axis=0)
-            l[i] = np.sum(data,axis=(0,2))*d_kz*d_kx
+            l[i] = np.sum(np.real(data),axis=(0,2))*d_kz*d_kx
         return fp.FlowStruct1D(self.spectra_data._coorddata,
                                l,
                                index=[list(self.spectra_data.times)*len(comps),comps])
@@ -358,7 +359,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
             
         val = self.CoordDF['y'][y]
         
-        spectra_data = self.get_spectra_plot(comps=[comp])
+        spectra_data = self.get_spectra_plot(comps=[comp],time=time)
 
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
@@ -372,14 +373,14 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         c_transform = (lambda x: np.real(x*k_x*k_z)) if premultiply else np.real
         
         fig, qm = spectra_data.slice[:,val,:].plot_contour(comp,
-                                                                rotate=True,
-                                                                time=time,
-                                                                transform_xdata=x_transform,
-                                                                transform_ydata=x_transform,
-                                                                transform_cdata=c_transform,
-                                                                contour_kw=contour_kw,
-                                                                fig=fig,
-                                                                ax=ax)
+                                                            rotate=True,
+                                                            time=time,
+                                                            transform_xdata=x_transform,
+                                                            transform_ydata=x_transform,
+                                                            transform_cdata=c_transform,
+                                                            contour_kw=contour_kw,
+                                                            fig=fig,
+                                                            ax=ax)
         if wavelength:
             ax.set_xlabel(r"$\lambda_x$")
             ax.set_ylabel(r"$\lambda_z$")
@@ -398,7 +399,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
 
         contour_kw = update_contour_kw(contour_kw)
 
-        spectra1d = self.get_spectra_1d_x(comps=[comp])
+        spectra1d = self.get_spectra_1d_x(comps=[comp],time=time)
         k_x = spectra1d.CoordDF['k_x']
         x_transform = (lambda x: 2*np.pi/(x+x[1])) if wavelength else None
         c_transform = (lambda x: np.real(x*k_x)) if premultiply else np.real
@@ -466,7 +467,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
 
-        autocorr = self.get_autocorrelation(comps=[comp])
+        autocorr = self.get_autocorrelation(comps=[comp],time=time)
         contour_kw = update_contour_kw(contour_kw)
         transform = None if not norm else lambda x: x/np.amax(x)
 
@@ -495,7 +496,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
 
-        autocorr = self.get_autocorrelation(comps=[comp])
+        autocorr = self.get_autocorrelation(comps=[comp],time=time)
         line_kw = update_line_kw(line_kw)
         transform = None if not norm else lambda x: x/np.amax(x)
 
@@ -523,7 +524,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
 
-        autocorr = self.get_autocorrelation(comps=[comp])
+        autocorr = self.get_autocorrelation(comps=[comp],time=time)
         line_kw = update_line_kw(line_kw)
         transform = None if not norm else lambda x: x/np.amax(x)
 
@@ -545,9 +546,13 @@ class x3d_spectra_xzt(x3d_spectra_xz,CommonTemporalData):
     def _get_avg_data(self):
         return self._module._avg_xzt_class
     
+    @property
+    def times(self):
+        return self.spectra_data.times
+    
     def _spectra_extract(self, its, path):
         
-        self.avg_data = self._get_avg_data(its,path,None)
+        self.avg_data = self._get_avg_data(path,its=its)
         
         for i, it in enumerate(its):
             spectra = self._get_spectra_data(it,path,None)
@@ -574,16 +579,14 @@ class x3d_spectra_xzt(x3d_spectra_xz,CommonTemporalData):
     def plot_correlation_z(self,comp,coord,time,*args, **kwargs):
         return super().plot_correlation_z(comp,coord,*args,time=time,**kwargs)
         
-class x3d_spectra_z(spectra_base,stathandler_base):
+class x3d_spectra_z(stat_z_handler,spectra_base):
     _flowstruct_class = fp.FlowStructND
     
     @property
     def _get_avg_data(self):
         return self._module._avg_z_class
     
-    def _spectra_extract(self,it,path,it0=None):
-        self.avg_data = self._get_avg_data(it,path,it0)
-        
+    def _get_spectra_data(self,it,path,it0=None):
         stat_folder = os.path.join(path,'statistics')
         files = [f for f in os.listdir(stat_folder) if 'spectra_z_z' in f]
         
@@ -594,6 +597,7 @@ class x3d_spectra_z(spectra_base,stathandler_base):
         lshape = (len(comps),self.NCL[2]//2+1,self.NCL[1],self.NCL[0])
         l = np.zeros(lshape,dtype='c16')
 
+        L_z = self.CoordDF['z'][-1] - self.CoordDF['z'][0]
         for i,comp in enumerate(comps):
             fn = self._get_stat_file_z(path,'spectra_z_z_'+comp,it)
             data = np.fromfile(fn,dtype='c16').reshape(shape)
@@ -606,16 +610,17 @@ class x3d_spectra_z(spectra_base,stathandler_base):
 
                 data = (it_*data - it0_*l0) / (it_ - it0_)
             
-            l[i] = data[:,:,:lshape[-1]]
+            l[i] = 0.5*data*L_z/np.pi
+            
         geom = fp.GeomHandler(self.metaDF['itype'])
-        
-        z = self.CoordDF['z']
+
         x = self.CoordDF['x']
+        z = self.CoordDF['z']
         
-        L_z = z[-1] - z[0]
-        
-        K_z = 2.*np.arange(1,lshape[1]+1)*np.pi/L_z
-        
+        dz = np.diff(z)[0]
+        K_z = 2.*np.pi*np.fft.rfftfreq(2*(shape[0]-1),dz)
+
+        comps = self._process_spectra(path,it,it0,l,comps, K_z)                        
         CoordDF = fp.coordstruct({'k_z':K_z,
                                   'y':self.CoordDF['y'],
                                   'x':x})
@@ -627,31 +632,96 @@ class x3d_spectra_z(spectra_base,stathandler_base):
             for i,comp in enumerate(index[1]):
                 l = self._apply_symmetry(comp,l,1)
 
-        self.spectra_data =  fp.FlowStructND(coorddata,
-                                            l,
-                                            data_layout=('k_z','y','x'),
-                                            wall_normal_line='y',
-                                            index=index)
+        return self._flowstruct_class(coorddata,
+                                      l,
+                                      data_layout=('k_z','y','x'),
+                                      wall_normal_line='y',
+                                      index=index)
+
+    def _extract_dudxmean(self,path,it,it0):
+        names = ['dudxmean','dudymean','dudzmean',
+                 'dvdxmean','dvdymean','dvdzmean',
+                 'dwdxmean','dwdymean','dwdzmean']
+
+        comps = ['dudx','dudy','dudz',
+                 'dvdx','dvdy','dvdz',
+                 'dwdx','dwdy','dwdz']
         
-    def get_autocorrelation(self,comps=None):
+        l = self._get_data(path,'dudx_mean',names,it,9,comps=comps)
+        if it0 is not None:
+            l0 = self._get_data(path,'dudx_mean',names,it0,9,comps=comps)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+        
+        index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            for i,comp in enumerate(index[1]):
+                l[i] = self._apply_symmetry(comp,l[i],0)
+
+        dudx_mean =  fp.FlowStruct2D(coorddata,
+                                    l,
+                                    index=index)  
+
+        return dudx_mean
+
+    def _process_spectra(self,path,it,it0,l,comps, kz):
+        dudx_mean = self._extract_dudxmean(path,it,it0)
+        
+        if 'spectra_ylocs' in self.metaDF.keys():
+            n = len(self.metaDF['spectra_ylocs'])
+            spectra_corr_comps = ["%s_corr%d"%(c,i) for c in ['uu','vv','ww']\
+                                    for i in range(1,n+1)]
+        else:
+            spectra_corr_comps = []
+        
+        for i,comp in enumerate(comps):
+            if comp == 'pdudx':
+                l[i] = 2*l[i]
+            if comp == 'pdwdz':
+                l[i] = 2*l[i]*kz[:,None,None]
+            if comp == 'pdvdy':
+                l[i] = 2*l[i]
+            if comp == 'omega_y':
+                l[i] = -dudx_mean['dudy'][None,:,:]*l[i]*kz[:,None,None]*1.0j
+            
+            if comp in spectra_corr_comps:
+                ind = int(comp[-1])-1
+                yloc = self.metaDF['spectra_ylocs'][ind]
+                new_comp = comp[:-1] + '_y' +str(yloc)
+                comps[i] = new_comp
+                
+        return comps
+
+    def _spectra_extract(self,it,path,it0=None):
+        self.avg_data = self._get_avg_data(it,path,it0)
+        
+        self.spectra_data = self._get_spectra_data(it,path,it0)
+        
+                
+    def get_autocorrelation(self,comps=None,time=None):
         if comps is None:
             comps = self.spectra_data.inner_index
 
         shape = (len(comps),*self.NCL[::-1])
         l = np.zeros(shape)
         
+        d_kz = np.diff(self.spectra_data.CoordDF['k_z'])[0]
         for i, comp in enumerate(comps):
-            data = self.spectra_data[comp]
+            data = self.spectra_data[time,comp]
             autocorr = irfft(data,
                              axis=0,norm='forward')
-            mid1 = shape[1] //2
-            
-            l[i,mid1:,:,:] = autocorr[:mid1,:,:]
-            l[i,:mid1,:,:] = autocorr[mid1:,:,:]
+            l[i] = np.fft.ifftshift(autocorr,axes=(0))*d_kz
+
             
         z_coords = self.CoordDF['z']
+        dz = 0.5*np.diff(z_coords)[0]
         
-        delta_z = np.linspace(-z_coords[-1]/2,z_coords[-1]/2,autocorr.shape[0])        
+        delta_z = np.linspace(-z_coords[-1]/2-dz,z_coords[-1]/2,autocorr.shape[0])        
 
         CoordDF = fp.coordstruct({'x':self.CoordDF['x'],
                                   'y':self.CoordDF['y'],
@@ -659,28 +729,29 @@ class x3d_spectra_z(spectra_base,stathandler_base):
         
         geom = fp.GeomHandler(self.metaDF['itype'])
         coorddata = fp.AxisData(geom, CoordDF, coord_nd=None)
-        index = [ind for ind in self.spectra_data.index if ind[1] in comps]
-
-        return fp.FlowStructND(coorddata,
-                                l,
-                                data_layout=('delta z','y','x'),
-                                wall_normal_line='y',
-                                index=index)
+        index = [[None]*len(comps),comps]
+        
+        return self._flowstruct_class(coorddata,
+                                      l,
+                                      data_layout=('delta z','y','x'),
+                                      wall_normal_line='y',
+                                      index=index)
         
         
-    def plot_spectra_z(self,comp,x_val,wavelength=False,premultiply=True,contour_kw=None,fig=None,ax=None,**kwargs):
-
+    def plot_spectra_z(self,comp,x_val,wavelength=False,premultiply=True,contour_kw=None,time=None,fig=None,ax=None,**kwargs):
+            
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
 
         contour_kw = update_contour_kw(contour_kw)
 
         k_z = self.spectra_data.CoordDF['k_z'][:,None]
-        x_transform = (lambda x: 2*np.pi/x) if wavelength else None
-        c_transform = (lambda x: np.real(x*k_z)) if premultiply else np.real
+        x_transform = (lambda x: 2*np.pi/(x+x[1])) if wavelength else None
+        c_transform = (lambda x: np.real(x*(k_z))) if premultiply else np.real
 
         fig, qm = self.spectra_data.slice[:,:,x_val].plot_contour(comp,
                                                                 rotate=True,
+                                                                time=time,
                                                                 transform_xdata=x_transform,
                                                                 transform_cdata=c_transform,
                                                                 contour_kw=contour_kw,
@@ -698,7 +769,7 @@ class x3d_spectra_z(spectra_base,stathandler_base):
 
         return fig, qm
     
-    def plot_correlation_z(self,comp,coord,x_val,y_wall_units=True,norm=True,line_kw=None,fig=None,ax=None,**kwargs):
+    def plot_correlation_z(self,comp,coord,x_val,y_wall_units=True,norm=True,line_kw=None,time=None,fig=None,ax=None,**kwargs):
         if y_wall_units:
             CoordDF = self.avg_data.Wall_Coords(x_val)
             y = CoordDF.index_calc('y',coord)
@@ -711,7 +782,7 @@ class x3d_spectra_z(spectra_base,stathandler_base):
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
 
-        autocorr = self.get_autocorrelation(comps=[comp])
+        autocorr = self.get_autocorrelation(comps=[comp],time=time)
         line_kw = update_line_kw(line_kw)
         transform = None if not norm else lambda x: x/np.amax(x)
 
@@ -725,6 +796,25 @@ class x3d_spectra_z(spectra_base,stathandler_base):
         ax.set_ylabel(r"$R_{%s}$"%comp)
         return fig, ax
     
+    def get_energy(self,comps=None,time=None):
+        if comps == None:
+            comps = self.spectra_data.inner_index
+
+        d_kz = np.diff(self.spectra_data.CoordDF['k_z'])[0]
+        l = np.zeros((len(comps),*self.spectra_data.shape[1:]))
+        shape = (2*(self.spectra_data.shape[0]-1),*self.spectra_data.shape[1:])
+        data = np.zeros(shape,dtype=np.complex128)
+
+        for i, comp in enumerate(comps):
+            data[:self.spectra_data.shape[0]]  = self.spectra_data[comp]
+            data[self.spectra_data.shape[0]:]  = self.spectra_data[comp][1:-1][::-1]
+            l[i] = np.sum(np.real(data),axis=0)*d_kz
+            
+        return fp.FlowStruct2D(self.spectra_data._coorddata,
+                               l,
+                               index=[list(self.spectra_data.times)*len(comps),comps])
+
+
     
 class x3d_autocorr_x(CommonData,stathandler_base):
     _flowstruct_class = fp.FlowStructND

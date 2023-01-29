@@ -91,7 +91,7 @@ class CommonTemporalData(CommonData):
     @classmethod
     def phase_average(cls,*objects,items=None):
         if not all(type(x)==cls for x in objects):
-            msg = (f"All objects to be averaged must be of type {cls.__name.__}"
+            msg = (f"All objects to be averaged must be of type {cls.__name__}"
                     f" not {[type(x).__name__ for x in objects]}")
             raise TypeError(msg)
         

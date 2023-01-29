@@ -13,6 +13,7 @@ from ._average import (x3d_avg_xz,
                        x3d_avg_z,
                        x3d_avg_xzt)
 
+from ..utils import get_iterations
 from flowpy.plotting import (update_subplots_kw,
                              create_fig_ax_without_squeeze)
 from itertools import product
@@ -217,11 +218,18 @@ class x3d_quadrant_xz(_quadrant_base,stat_xz_handler):
             
 class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
     def _quad_extract(self,path,its=None):
+        if its is None:
+            its = get_iterations(path,statistics=True)
+            
         self._meta_data = self._module._meta_class(path)
         
         self._avg_data = self._module._avg_xzt_class(path,its=its)
         self.quad_data = self._extract_uvq(path,its,None)
-        
+    
+    @property
+    def times(self):
+        return self.quad_data.times
+    
     def _hdf_extract(self,fn,key):
         key = self._get_hdf_key(key)
         
@@ -233,14 +241,19 @@ class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
         
         self.quad_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/quad_data')
         
-    def plot_line(self, h_list,prop_dir ,coord, y_mode_wall, Quadrants=None, norm=False, fig=None, ax=None, line_kw=None, **kwargs):
-        if norm:
-            time = max(self._avg_data.times)
-            norm_Quadrant = self.QuadAnalDF/self._avg_data.UU_tensorDF[time,'uv']
-        else:
-            norm_Quadrant = self.QuadAnalDF
-            
+    def plot_line(self, h_list,prop_dir ,coord, y_mode_wall=True, Quadrants=None, norm=False, fig=None, ax=None, line_kw=None, **kwargs):
         Quadrants = self._check_quadrant(Quadrants)
+
+        if norm:
+            comps = [self._comp_calc(h,quad) for h, quad in product(h_list,Quadrants)]
+            times = self.times if prop_dir == 't' else [coord]
+            norm_Quadrant = self.quad_data[times,comps].copy()
+            for time in times:
+                for comp in comps:
+                    norm_Quadrant[time,comp] /= self._avg_data.uu_data[time,'uv']
+        else:
+            norm_Quadrant = self.quad_data
+            
         quad_num = len(Quadrants)
 
         kwargs = update_subplots_kw(kwargs,figsize=[12,5])
@@ -275,7 +288,7 @@ class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
                 for h in h_list:
                     comp = self._comp_calc(h,quad)
                     fig, ax[i] = norm_Quadrant.plot_line(comp,
-                                                        time = time,
+                                                        time = coord,
                                                         label=f'$h = {h}$',
                                                         channel_half = True,
                                                         fig= fig, ax= ax[i],
@@ -283,7 +296,7 @@ class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
                     
             x_label = self.Domain.create_label(f"$y$")
             ax[-1].set_xlabel(x_label)
-            title = self.Domain.create_label(r"$t=%.3g$"%time)
+            title = self.Domain.create_label(r"$t=%.3g$"%coord)
             ax[0].set_title(title,loc='left')
                 
             ax[i].set_ylabel(r"$Q%d$"%quad)

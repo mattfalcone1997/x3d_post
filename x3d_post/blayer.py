@@ -94,7 +94,8 @@ class x3d_avg_z(xp.x3d_avg_z):
     
         return tau_star
 
-    def _velo_scale_calc(self, PhyTime):
+    def _velo_scale_calc(self, PhyTime=None):
+        PhyTime = self.check_PhyTime(PhyTime)
         return self.mean_data[PhyTime,'u'][-1,:].copy()
 
     U_infty_calc = xp.x3d_avg_z.bulk_velo_calc

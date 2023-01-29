@@ -345,7 +345,7 @@ class _AVG_developing(_AVG_base):
         return disp_thickness, mom_thickness, shape_factor
 
     def _velo_scale_calc(self,PhyTime):
-            
+
         u_velo = self.mean_data[PhyTime,'u'].squeeze()
         ycoords = self.CoordDF['y']
 
@@ -456,8 +456,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         return self._wall_unit_calc(PhyTime)
 
     def velo_scale_calc(self,PhyTime=None):
-
-        PhyTime = self.check_PhyTime(PhyTime)
+        PhyTime = self.check_PhyTime(PhyTime)        
         return self._velo_scale_calc(PhyTime)
 
     bulk_velo_calc = velo_scale_calc
@@ -926,9 +925,10 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         bulk_velo = 0.5*integrate_simps(u_velo,ycoords)
         return bulk_velo
 
+    velo_scale_calc = _velo_scale_calc 
     bulk_velo_calc = _velo_scale_calc
 
-    def Cf_calc(self,PhyTime):
+    def Cf_calc(self,PhyTime=None):
         PhyTime = self.check_PhyTime(PhyTime)
 
         rho_star = 1.0

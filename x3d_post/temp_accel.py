@@ -244,3 +244,9 @@ class x3d_FIK_xzt(xp.x3d_FIK_xzt,temp_accel_base):
 
 class x3d_spectra_xzt(xp.x3d_spectra_xzt,temp_accel_base):
     pass
+
+class x3d_quadrant_xzt(xp.x3d_quadrant_xzt,temp_accel_base):
+    pass
+
+class x3d_Cf_Renard_xzt(xp.x3d_Cf_Renard_xzt,temp_accel_base):
+    pass
