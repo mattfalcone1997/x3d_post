@@ -1,11 +1,12 @@
-from builtins import Exception, object
 from ._data_handlers import read_parameters
 from ._common import Common
 import numpy as np
 import flowpy as fp
 import json
 from os.path import join, isfile
+import os
 import pandas as pd
+from itertools import product
 
 class meta_x3d(Common):
     def __init__(self,*args,from_hdf=False,**kwargs):
@@ -34,7 +35,7 @@ class meta_x3d(Common):
         self.NCL = params['mesh']['sizes']
         if params['itype'] == 3:
             itype = fp.CHANNEL
-        elif params['itype'] == 13:
+        elif params['itype'] == 13 or params['itype']==14:
             itype = fp.BLAYER
         else:
             raise RuntimeError("Other flow types not yet checked")
@@ -150,3 +151,93 @@ class meta_x3d(Common):
 
         return h5_obj
 
+_meta_class = meta_x3d
+class probes(Common):
+    pass
+
+class line_probes(Common):
+    def __init__(self,*args,from_hdf=False,**kwargs):
+        if from_hdf:
+            self._hdf_extract(*args,**kwargs)
+        else:
+            self._extract_probes(*args,**kwargs)
+            
+    @classmethod
+    def from_hdf(cls,fn,key=None):
+        return cls(fn,from_hdf=True,key=key)
+    
+    def _extract_probes(self,path):
+        
+        probe_path = join(path,'probes')
+        params_files = [fn for fn in os.listdir(probe_path)\
+                        if 'probe_info' in fn]
+        self.meta_data = self._module._meta_class(path)
+        if len(params_files) > 1:
+            raise NotImplementedError("May be done if necessary")
+            param_list = []
+            for fn in params_files:
+                param_list.append(json.loads(join(probe_path,fn)))
+
+            if self._check_probes(param_list):
+                raise ValueError('Run no must be provided if probes are not the same')
+            probe_info = param_list[0]
+            
+            times_list = [join(probe_path,'probes_times%d.csv'%(i+1)) \
+                            for i in range(len(param_list))]
+        else:
+            with open(join(probe_path,params_files[0]),'r') as f:
+                probe_info = json.load(f)
+            
+            times = np.loadtxt(join(probe_path,'probe_times1.csv'),usecols=1,
+                               delimiter=',',skiprows=1)
+            nprobes = probe_info['nlineprobes']
+            fn_list = ['lineprobe%.4d-run1'%(i+1) for i in range(nprobes)]
+            
+            probe_data = {}
+            shape = (len(times)*3,self.meta_data.NCL[2])
+            index = list(product(times,['u','v','w']))
+            
+            coorddata = fp.AxisData(self.meta_data.Domain,
+                                       self.meta_data.CoordDF,
+                                       None)
+            
+            for i, fn in enumerate(fn_list):
+                data = np.fromfile(join(probe_path,fn)).reshape(shape)
+                probe_data[i+1] = fp.FlowStructND_time(coorddata,data,index=index,data_layout=('z'))
+                
+            self.probe_data = probe_data
+            
+            
+    def _check_probes(self,probe_params: list[dict]):
+        probes_run = []
+        for run in probe_params:
+            probes_run.append({k:v for k,v in run.items() if 'probe' in k })
+            
+        for probe in probes_run[1:]:
+           if not np.isclose(probes_run[0]['x'],probe['x']):
+               return False
+           if not np.isclose(probes_run[0]['y'],probe['y']):
+               return False
+           
+        return True
+            
+    def save_hdf(self,fn,mode,key=None):
+        if key is None:
+            key = self._get_hdf_key(key)
+            
+        self.meta_data.save_hdf(fn,mode,key=key+'/meta_data')
+        
+        for k,v in self.probe_data.items():
+            v.to_hdf(fn,'a',key=key+'/probe %d'%k)        
+    
+    def _hdf_extract(self,fn,key=None):
+        if key is None:
+            key = self._get_hdf_key(key)
+            
+        self.meta_data = self._module._meta_class.from_hdf(fn,key=key+'/meta_data')
+        
+        h5_obj = fp.hdfHandler(fn,'r',key=key)
+        keys = [k for k in h5_obj.keys() if 'probe' in k]
+        self.probe_data = {}
+        for i,k in enumerate(keys):
+            self.probe_data[i+1] = fp.FlowStructND_time.from_hdf(fn,key=key+'/'+k)

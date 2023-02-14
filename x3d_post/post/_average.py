@@ -416,7 +416,8 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         self.mean_data.Translate(translation)
         self.uu_data.Translate(translation)
 
-        self.CoordDF.Translate([*translation[::-1],0])
+        args = {'y':translation[0],'x':translation[1]}
+        self.CoordDF.Translate(**args)
     
     def Wall_Coords(self,axis_val,PhyTime=None):
         _, delta_v = self.wall_unit_calc(PhyTime)
@@ -559,7 +560,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         
         return x_transform, y_transform
     
-    def plot_flow_wall_units(self,x_vals,plot_uplus_yplus=True,PhyTime=None,fig=None,ax=None,line_kw:dict =None,**kwargs):
+    def plot_flow_wall_units(self,x_vals,plot_sublayer=True,PhyTime=None,fig=None,ax=None,line_kw:dict =None,**kwargs):
         
         PhyTime = self.check_PhyTime(PhyTime)
         x_vals = check_list_vals(x_vals)
@@ -587,7 +588,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
                                                 **kwargs)
 
         labels = [l.get_label() for l in ax.get_lines()]
-        if not r"$\bar{u}^+=y^+$" in labels and plot_uplus_yplus:
+        if not r"$\bar{u}^+=y^+$" in labels and plot_sublayer:
             uplus_max = np.amax([l.get_ydata() for l in ax.get_lines()])
             u_plus_array = np.linspace(0,uplus_max,100)
 
@@ -677,7 +678,8 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         line_kw = update_line_kw(line_kw)
         avg_label = self.Domain.avgStyle(uu_label)
         if y_vals_list == 'max':
-            line_kw['label'] = r"$%s_{max}$"%avg_label
+            if 'label' not in line_kw:
+                line_kw['label'] = r"$%s_{max}$"%avg_label
             
             fig, ax = self.uu_data.plot_line_max(comp,'x',time=PhyTime,fig=fig,ax=ax,line_kw=line_kw,**kwargs)
         else:
@@ -855,16 +857,14 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         self.mean_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/mean_data')
         self.uu_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/uu_data')
 
+        h5_obj = fp.hdfHandler(fn,'r',key=key)
+        if 'uuu_data' in h5_obj.keys():
+            self.uuu_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/uuu_data')
+        
+        if 'uuuu_data' in h5_obj.keys():
+            self.uuuu_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/uuuu_data')                
+
         return fp.hdfHandler(fn,'r',key=key)
-
-    def save_hdf(self, fn, mode, key=None):
-        key = self._get_hdf_key(key)
-
-        h5_obj = self._meta_data.save_hdf(fn,mode,key=key+'/meta_data')
-        self.mean_data.to_hdf(fn,key=key+'/mean_data')
-        self.uu_data.to_hdf(fn,key=key+'/uu_data')
-
-        return h5_obj
 
     def wall_unit_calc(self,PhyTime=None):
         PhyTime = self.check_PhyTime(PhyTime)
@@ -875,7 +875,7 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         REN = self.metaDF['re']
         
         tau_w = self.tau_calc(PhyTime)
-    
+        print(tau_w,rho_star,REN)
         u_tau_star = np.sqrt(tau_w/rho_star)/np.sqrt(REN)
         delta_v_star = (nu_star/u_tau_star)/REN
         return u_tau_star, delta_v_star
@@ -981,7 +981,6 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         
         y_plus_trans, u_plus_trans = self._get_uplus_yplus_transforms(PhyTime)
 
-
         fig, ax = self.mean_data.plot_line('u',
                                             channel_half=True,
                                             time=PhyTime,
@@ -994,7 +993,7 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         if plot_sublayer:
             u = np.amax(self.mean_data[PhyTime,'u'])
 
-            u_plus_array = np.linspace(0,u_plus_trans(u),100)
+            u_plus_array = np.linspace(0,ax.get_ylim()[1],100)
             ax.cplot(u_plus_array,u_plus_array,
                      label=r"$\bar{u}^+=y^+$",
                      color='r',
@@ -1169,8 +1168,24 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
         self.mean_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/mean_data')
         self.uu_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/uu_data')
 
+        h5_obj = fp.hdfHandler(fn,'r',key=key)
+        if 'uuu_data' in h5_obj.keys():
+            self.uuu_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/uuu_data')
+        
+        if 'uuuu_data' in h5_obj.keys():
+            self.uuuu_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/uuuu_data')                
+
         return fp.hdfHandler(fn,'r',key=key)
 
+    def check_PhyTime(self, PhyTime):
+        min_t = np.min(self.times) 
+        max_t = np.max(self.times) 
+        if PhyTime > max_t or PhyTime < min_t:
+            raise ValueError(f"Time given ({PhyTime}) "
+                             f"outside range [{min_t}, {max_t}]")
+            
+        index = np.argmin(np.abs(self.times-PhyTime))
+        return self.times[index]
     def _return_index(self,PhyTime):
         if not isinstance(PhyTime,str):
             PhyTime = "{:.9g}".format(PhyTime)
@@ -1418,7 +1433,8 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
         for time in PhyTimes:
             
             time_label = self.Domain.timeStyle
-            line_kw['label'] = r"$%s = %.3g$"%(time_label,time)
+            if 'label' not in line_kw:
+                line_kw['label'] = r"$%s = %.3g$"%(time_label,time)
             
             sublayer = True if time == PhyTimes[-1] and plot_sublayer else False
             fig, ax = super().plot_flow_wall_units(time,
@@ -1460,11 +1476,12 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
 
 
         uu_label = self.Domain.create_label(r"%s'%s'"%tuple(comp))
-        avg_label = self.Domain.AVGStyle(uu_label)
+        avg_label = self.Domain.avgStyle(uu_label)
 
         line_kw = update_line_kw(line_kw)
         if y_vals_list == 'max':
-            line_kw['label'] = r"$%s_{max}$"%avg_label
+            if 'label' not in line_kw:
+                line_kw['label'] = r"$%s_{max}$"%avg_label
             
             fig, ax = self.uu_data.plot_line_time_max(comp,fig=fig,ax=ax,line_kw=line_kw,**kwargs)
         else:

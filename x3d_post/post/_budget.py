@@ -1130,12 +1130,11 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
     def _viscous_extract(self, comp):
         
         U_comp = self.mean_data[comp]
-        dudy = fp.Grad_calc(self.CoordDF,U_comp,'y')
-        d2udy2 = fp.Grad_calc(self.CoordDF,dudy,'y')
+        dudy = fp.Grad_calc(self.mean_data.CoordDF,U_comp,'y')
+        d2udy2 = fp.Grad_calc(self.mean_data.CoordDF,dudy,'y')
         
         REN = self.avg_data.metaDF['re']
         mu_star = 1.0
-        
         return (mu_star/REN)*d2udy2
 
     def _turb_transport(self, comp):
@@ -1146,7 +1145,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
 
         uv = self.uu_data[comp_uv]
 
-        return -1*self.Domain.Grad_calc(self.avg_data.CoordDF,uv,'y')
+        return -1*self.Domain.Grad_calc(self.uu_data.CoordDF,uv,'y')
 
     def _pressure_grad(self, comp):
         U_mean = self.mean_data[comp]
@@ -1162,7 +1161,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
     
 
     def plot_balance(self, PhyTime=None,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.budget_data.check_outer(PhyTime,err=KeyError())
+        PhyTime = self.avg_data.check_PhyTime(PhyTime)
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
         budget_terms = self._check_terms(budget_terms)
         line_kw= update_line_kw(line_kw)
@@ -1183,7 +1182,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
         return fig, ax
 
     def plot_integrated_budget(self,budget_terms=None,PhyTime=None, fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.budget_data.check_outer(PhyTime,err=KeyError())
+        PhyTime = self.avg_data.check_PhyTime(PhyTime)
         budget_terms = self._check_terms(budget_terms)
         line_kw= update_line_kw(line_kw)
 
@@ -1256,6 +1255,7 @@ class x3d_mom_balance_xzt(x3d_mom_balance_xz,budget_xzt_base):
         
         fig, ax, single_input = self._create_budget_axes(times_list,fig,ax,**kwargs)
         for i,time in enumerate(times_list):
+            time = self.avg_data.check_PhyTime(time)
             fig, ax[i] = super().plot_balance(PhyTime=time,budget_terms=budget_terms,fig=fig,ax=ax[i],line_kw=line_kw)
 
             time_label = self.Domain.timeStyle
@@ -1507,9 +1507,8 @@ class Cf_Renard_base(budgetBase):
         dudy = fp.Grad_calc(self.CoordDF,u_mean,'y')
         dissipation = dudy*dudy/re
         
-        y = self.CoordDF['y']
         u = self._scale_vel()
-        return 2.0*simps(dissipation,y,axis=0)/(u*u*u)
+        return dissipation/(u*u*u)
 
     def _production_y_extract(self):
         u_mean = self.avg_data.mean_data['u']
@@ -1517,22 +1516,17 @@ class Cf_Renard_base(budgetBase):
         dudy = fp.Grad_calc(self.CoordDF,u_mean,'y')
 
         production = - uv_mean*dudy
-        y = self.CoordDF['y']
         u = self._scale_vel()
         
-        return 2.0*simps(production,y,axis=0)/(u*u*u)
+        return production/(u*u*u)
 
     def _kinetic_energy_y_extract(self):
         u = self._scale_vel()
         u_mean = self.avg_data.mean_data['u']
         v_mean = self.avg_data.mean_data['v']
-        
-        K = 0.5*u_mean*u_mean
-        
-        v_dKdy = v_mean*fp.Grad_calc(self.CoordDF,K,'y') \
-                -u*v_mean*fp.Grad_calc(self.CoordDF,u_mean,'y')
-        y = self.CoordDF['y']
-        return 2.0*simps(v_dKdy,y,axis=0)/(u*u*u)
+
+        v_dKdy = (u_mean-u)*v_mean*fp.Grad_calc(self.CoordDF,u_mean,'y')
+        return v_dKdy/(u*u*u)
     
     def _plot_x(self,budget_terms=None,plot_total=True,PhyTime=None,fig=None,ax=None,line_kw=None,**kwargs):
 
@@ -1562,17 +1556,27 @@ class x3d_Cf_Renard_z(Cf_Renard_base):
         kinetic_x = self._kinetic_energy_x_extract()
         kinetic_y = self._kinetic_energy_y_extract()
         pressure = self._pressure_extract()
+        diffusion = self._diffusion_x_extract()
 
         if not separate_xy:
-            array_concat = [dissipation_y+dissipation_x,
-                            production_y+production_x,
-                            kinetic_x+kinetic_y+pressure]
-            budget_index = ['dissipation', 'production','kinetic']
+            array_concat = [self._integrate(dissipation_y+dissipation_x),
+                            self._integrate(production_y+production_x),
+                            self._integrate(kinetic_x+kinetic_y+pressure),
+                            self._integrate(diffusion)]
+            budget_index = ['dissipation', 'production','kinetic','diffusion']
         else:
-            array_concat = [dissipation_y,dissipation_x,production_y,production_x,
-                            kinetic_x,kinetic_y,pressure]
+            array_concat = [self._integrate(dissipation_y),
+                            self._integrate(dissipation_x),
+                            self._integrate(production_y),
+                            self._integrate(production_x),
+                            self._integrate(kinetic_x),
+                            self._integrate(kinetic_y),
+                            self._integrate(pressure),
+                            self._integrate(diffusion)]
+            
             budget_index = ['dissipation y', 'dissipation x','production y',
-                            'production x','kinetic x','kinetic y', 'pressure']
+                            'production x','kinetic x','kinetic y', 'pressure',
+                            'diffusion']
         
         budget_array = np.stack(array_concat,axis=0)
         phystring_index = [None]*len(budget_array)
@@ -1580,7 +1584,10 @@ class x3d_Cf_Renard_z(Cf_Renard_base):
         budget = fp.datastruct(budget_array,index =[phystring_index,budget_index])
 
         return budget 
-    
+    def _integrate(self,array):
+        y = self.CoordDF['y']
+        return 2.0*simps(array,y,axis=0)
+
     def plot(self,*args,**kwargs):
         fig, ax = self._plot_x(*args,**kwargs)
         ax.set_xlabel(r"$x$")
@@ -1589,47 +1596,60 @@ class x3d_Cf_Renard_z(Cf_Renard_base):
     def _dissipation_x_extract(self):
         u = self._scale_vel()
 
-        u_mean = self.avg_data.mean_data['u'] - u
+        u_mean = self.avg_data.mean_data['u']
         re = self.metaDF['re']
         dudx = fp.Grad_calc(self.CoordDF,u_mean,'x')
+        # dudx1 = fp.Grad_calc(self.CoordDF,u_mean,'x')
         dissipation = dudx*dudx/re
-        
-        y = self.CoordDF['y']
-        return 2.0*simps(dissipation,y,axis=0)/(u*u*u)
+        return dissipation/(u*u*u)
 
     def _production_x_extract(self):
         u = self._scale_vel()
-        u_mean = self.avg_data.mean_data['u'] - u
+        u_mean = self.avg_data.mean_data['u']
         uu_mean = self.avg_data.uu_data['uu']
         dudx = fp.Grad_calc(self.CoordDF,u_mean,'x')
 
-        production = - uu_mean*dudx
-        y = self.CoordDF['y']
-        return 2.0*simps(production,y,axis=0)/(u*u*u)
+        return - uu_mean*dudx/(u*u*u)
 
+    def _diffusion_x_extract(self):
+        u = self._scale_vel()
+        u_mean = self.avg_data.mean_data['u']
+        re = self.metaDF['re']
+        
+        dudx = fp.Grad_calc(self.CoordDF,u_mean,'x')
+        
+        dK2dx2 = fp.Grad_calc(self.CoordDF,
+                              (u_mean-u)*dudx,
+                              'x')
+        y = self.CoordDF['y']
+        return dK2dx2/(u*u*u)
+        
+        
     def _kinetic_energy_x_extract(self):
         u = self._scale_vel()
         u_mean = self.avg_data.mean_data['u']
         
-        K = 0.5*u_mean*u_mean
-        
-        u_dKdx = (u_mean-u)*fp.Grad_calc(self.CoordDF,K,'x')
+        u_dKdx = (u_mean-u)*u_mean*fp.Grad_calc(self.CoordDF,u_mean,'x')
         y = self.CoordDF['y']
-        return 2.0*simps(u_dKdx,y,axis=0)/(u*u*u)
+        return u_dKdx/(u*u*u)
 
     def _pressure_extract(self):
         u = self._scale_vel()
         u_mean = self.avg_data.mean_data['u'] - u
         p_mean = self.avg_data.mean_data['p']
         u_dpdx = u_mean*fp.Grad_calc(self.CoordDF,p_mean,'x')
-        y = self.CoordDF['y']
-        return 2.0*simps(u_dpdx,y,axis=0)/(u*u*u)
+        return u_dpdx/(u*u*u)
+    
 class x3d_Cf_Renard_xz(Cf_Renard_base):
+    def _integrate(self,array):
+        y = self.CoordDF['y']
+        return simps(array,y,axis=0)
+    
     def _budget_extract(self):
-        dissipation_y = 0.5*self._dissipation_y_extract()
-        production_y = 0.5*self._production_y_extract()
-        kinetic_y = 0.5*self._kinetic_energy_y_extract()
-        pressure = 0.5*self._pressure_extract()
+        dissipation_y = self._dissipation_y_extract()
+        production_y = self._production_y_extract()
+        kinetic_y = self._kinetic_energy_y_extract()
+        pressure = self._pressure_extract()
 
         array_concat = [dissipation_y,
                         production_y,
@@ -1653,8 +1673,7 @@ class x3d_Cf_Renard_xz(Cf_Renard_base):
         re = self.metaDF['re']                 
         dpdx = -(d2u_dy2/re - d_uv_dy)
         u_dpdx = u_mean*dpdx
-        y = self.CoordDF['y']
-        return 2.0*simps(u_dpdx,y,axis=0)/(u*u*u)
+        return u_dpdx/(u*u*u)
     
     def _check_terms(self, comp):
                 
@@ -1699,6 +1718,10 @@ class x3d_Cf_Renard_xz(Cf_Renard_base):
         
 class x3d_Cf_Renard_xzt(Cf_Renard_base):
     
+    def _integrate(self,array):
+        y= self.CoordDF['y']
+        return simps(array,y,axis=0)
+    
     @property
     def times(self):
         return self.avg_data.times
@@ -1710,24 +1733,31 @@ class x3d_Cf_Renard_xzt(Cf_Renard_base):
         d_uv_dy = fp.Grad_calc(self.CoordDF,self.avg_data.uu_data['uv'],'y')
         dudy = fp.Grad_calc(self.CoordDF,self.avg_data.mean_data['u'],'y')
         d2u_dy2  = fp.Grad_calc(self.CoordDF,dudy,'y')
-        
-        re = self.metaDF['re']                 
-        dpdx = -(d2u_dy2/re - d_uv_dy)
+        dudt = np.gradient(u_mean,self.times,axis=-1)
+        re = self.metaDF['re']            
+        dpdx = -(d2u_dy2/re - d_uv_dy) + dudt
         u_dpdx = u_mean*dpdx
         y = self.CoordDF['y']
-        return 2.0*simps(u_dpdx,y,axis=0)/(u*u*u)
+        return -u_dpdx/(u*u*u)
     
-    def _budget_extract(self):
-        dissipation_y = 0.5*self._dissipation_y_extract()
-        production_y = 0.5*self._production_y_extract()
-        kinetic_y = 0.5*self._kinetic_energy_y_extract()
-        pressure = 0.5*self._pressure_extract()
+    def _budget_extract(self,separate=False):
+        dissipation_y = self._dissipation_y_extract()
+        production_y = self._production_y_extract()
+        kinetic_y = self._kinetic_energy_y_extract()
+        pressure = self._pressure_extract()
         transient = self._transient_extract()
 
-        array_concat = [dissipation_y,
-                        production_y,
-                        kinetic_y+pressure+transient]
-        budget_index = ['dissipation', 'production','kinetic']
+        if separate:
+            array_concat = [self._integrate(dissipation_y),
+                            self._integrate(production_y),
+                            self._integrate(kinetic_y+pressure),
+                            self._integrate(transient)]
+            budget_index = ['dissipation', 'production','kinetic','transient']
+        else:
+            array_concat = [self._integrate(dissipation_y),
+                            self._integrate(production_y),
+                            self._integrate(kinetic_y+transient+pressure)]
+            budget_index = ['dissipation', 'production','kinetic']
             
         budget_array = np.stack(array_concat,axis=0)
         phystring_index = [None]*len(budget_array)
@@ -1738,14 +1768,11 @@ class x3d_Cf_Renard_xzt(Cf_Renard_base):
     
     def _transient_extract(self):
         u = self._scale_vel()
-        u_mean = self.avg_data.mean_data['u']
-
+        u_mean = self.avg_data.mean_data['u']-u
         times  = self.avg_data.times
-        
-        dKdt = (u_mean - u)*np.gradient(u_mean,times,axis=1)
-        y = self.CoordDF['y']
+        dKdt = u_mean*np.gradient(u_mean,times,axis=1)
 
-        return 2.0*simps(dKdt,y,axis=0)/(u*u*u)
+        return dKdt/(u*u*u)
 
     def plot(self,*args,**kwargs):
         fig, ax = self._plot_x(*args,**kwargs)

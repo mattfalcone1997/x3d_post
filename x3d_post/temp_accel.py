@@ -15,7 +15,7 @@ from flowpy.plotting import (update_subplots_kw,
                              create_fig_ax_with_squeeze,
                              update_line_kw,
                              )
-
+from .utils import get_iterations
 class meta_x3d(xp.meta_x3d):
     def _meta_hook(self, params):
         if params['temp_accel']['profile'] == 'linear':
@@ -27,6 +27,22 @@ class meta_x3d(xp.meta_x3d):
                                 'x0' : params['temp_accel']['x0'],
                                 'alpha_accel' : params['temp_accel']['alpha_accel']})
         
+        self._tb = np.array(params['temp_accel']['t'])
+        self._ub = np.array(params['temp_accel']['U_b'])
+
+    def _hdf_extract(self, fn, key=None):
+        hdf_obj = super()._hdf_extract(fn, key)
+        
+        self._ub = hdf_obj['ub'][:]
+        self._tb = hdf_obj['tb'][:]
+        return hdf_obj
+    
+    def save_hdf(self, fn, mode, key=None):
+        hdf_obj = super().save_hdf(fn, mode, key)
+        hdf_obj.create_dataset('ub',data=self._ub)
+        hdf_obj.create_dataset('tb',data=self._tb)
+        return hdf_obj
+    
 _meta_class  = meta_x3d
 
 class temp_accel_base(CommonTemporalData,ABC):
@@ -34,19 +50,29 @@ class temp_accel_base(CommonTemporalData,ABC):
     def phase_average(cls, *objects, items=None):
         temp_object = super().phase_average(*objects, items=items)
         
-        temp_object.metaDF['t_start'] += temp_object._time_shift
-        temp_object.metaDF['t_end'] += temp_object._time_shift
+        if 't_start' in temp_object.metaDF:
+            temp_object.metaDF['t_start'] += temp_object._time_shift
+        if 't_end' in temp_object.metaDF:
+            temp_object.metaDF['t_end'] += temp_object._time_shift
         
         return temp_object    
     
     @property
     def _time_shift(self):
-        return -self.metaDF['t_start']
+        thresh = 1.01
+        index = np.argmin(np.abs(self._meta_data._ub-thresh))
+        time_ref = self._meta_data._tb[index]
+        index = np.argmin(np.abs(self.times-time_ref))
+        return -self.times[index]
     
     def _get_its_shift(cls,path) -> int:
         meta_data = cls._module._meta_class(path)
-        
-        return meta_data.get_it(meta_data.metaDF['t_start'])
+        thresh = 1.01
+        index = np.argmin(np.abs(meta_data._ub-thresh))
+        time_ref = meta_data._tb[index]
+        times = meta_data.get_times(get_iterations(path,statistics=True))
+        index = np.argmin(np.abs(times-time_ref))
+        return times[index]
     
 class x3d_inst_xzt(xp.x3d_inst_xzt):
     pass
@@ -55,7 +81,7 @@ class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
     
     def conv_distance_calc(self,t0=None):
             
-        bulk_velo = self.bulk_velo_calc()
+        bulk_velo = self.velo_scale_calc()
 
         time0 = self.times[0]
         times = [x-time0 for x in self.times]
@@ -116,6 +142,9 @@ class x3d_avg_xzt_conv(x3d_avg_xzt):
         
     def conv_distance_calc(self):
         return super().conv_distance_calc(self._t0)
+    
+    def get_times_from_xconv(self,x_conv):
+        return self.times[self.CoordDF.index_calc('x',x_conv)]
     
     def _return_index(self,x_val):
         return self.CoordDF.index_calc('x',x_val)
@@ -249,4 +278,7 @@ class x3d_quadrant_xzt(xp.x3d_quadrant_xzt,temp_accel_base):
     pass
 
 class x3d_Cf_Renard_xzt(xp.x3d_Cf_Renard_xzt,temp_accel_base):
+    pass
+
+class line_probes(xp.line_probes):
     pass

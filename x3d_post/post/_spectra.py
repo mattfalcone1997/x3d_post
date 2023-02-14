@@ -392,7 +392,16 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         ax.set_yscale('log')
         return fig, qm
     
-    def plot_spectra_x(self,comp,wavelength=False,premultiply=True,contour_kw=None,time=None,fig=None,ax=None,**kwargs):
+    def plot_spectra_x(self,comp,
+                       wavelength=False,
+                       premultiply=True,
+                       transform_xdata=None,
+                       transform_ydata=None,
+                       transform_cdata=None,
+                       contour_kw=None,
+                       time=None,
+                       fig=None,
+                       ax=None,**kwargs):
 
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
@@ -401,8 +410,14 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
 
         spectra1d = self.get_spectra_1d_x(comps=[comp],time=time)
         k_x = spectra1d.CoordDF['k_x']
+        
+        transform_xdata, transform_ydata, \
+        transform_cdata =spectra1d._check_datatransforms(transform_xdata, 
+                                                         transform_ydata,
+                                                         transform_cdata)
+            
         x_transform = (lambda x: 2*np.pi/(x+x[1])) if wavelength else None
-        c_transform = (lambda x: np.real(x*k_x)) if premultiply else np.real
+        c_transform = (lambda x: np.real(transform_cdata(x)*k_x)) if premultiply else np.real
 
         fig, qm = spectra1d.plot_contour(comp,
                                         rotate=False,

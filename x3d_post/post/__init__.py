@@ -1,4 +1,7 @@
-from ._meta import meta_x3d
+from ._meta import (meta_x3d,
+                    probes,
+                    line_probes)
+
 from ._average import (x3d_avg_z,
                        x3d_avg_xz,
                        x3d_avg_xzt)
