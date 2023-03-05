@@ -11,13 +11,14 @@ import matplotlib as mpl
 from ._meta import meta_x3d
 _meta_class=meta_x3d
 
-from ._average import x3d_avg_z
+from ._average import x3d_avg_z, x3d_avg_xzt
 from ._common import CommonData
-
 _avg_z_class = x3d_avg_z
+_avg_xzt_class = x3d_avg_xzt
 
-from ._instant import x3d_inst_z
+from ._instant import x3d_inst_z, x3d_inst_xzt
 _inst_z_class = x3d_inst_z
+_inst_xzt_class = x3d_inst_xzt
 
 class _fluct_base(CommonData):
 
@@ -266,7 +267,7 @@ class _fluct_base(CommonData):
         return self.fluct_data.__str__()
 
 class x3d_fluct_z(_fluct_base):
-    def _fluct_extract(self,time_inst_data_list,avg_data=None,path_to_folder='.',*args,**kwargs):
+    def _fluct_extract(self,time_inst_data_list,avg_data=None,path='.',*args,**kwargs):
                 
         if not isinstance(time_inst_data_list,(list,tuple)):
             time_inst_data_list = [time_inst_data_list]
@@ -279,9 +280,9 @@ class x3d_fluct_z(_fluct_base):
                     inst_data += time_inst_data
             else:
                 if i == 0:
-                    inst_data = self._module._inst_z_class(time_inst_data,path_to_folder=path_to_folder,avg_data=avg_data,*args,**kwargs)
+                    inst_data = self._module._inst_z_class(time_inst_data,path=path,avg_data=avg_data,*args,**kwargs)
                 else:
-                    inst_data += self._module._inst_z_class(time_inst_data,path_to_folder=path_to_folder,avg_data=avg_data,*args,**kwargs)
+                    inst_data += self._module._inst_z_class(time_inst_data,path=path,avg_data=avg_data,*args,**kwargs)
         
         self.avg_data = inst_data._avg_data
 
@@ -311,3 +312,49 @@ class x3d_fluct_z(_fluct_base):
         return fp.FlowStruct3D(inst_data.inst_data._coorddata,
                                fluct,
                                index=inst_data.inst_data.index)
+        
+class x3d_fluct_xzt(_fluct_base):
+    def _fluct_extract(self,time_inst_data_list,avg_data=None,path='.',*args,**kwargs):
+                
+        if not isinstance(time_inst_data_list,(list,tuple)):
+            time_inst_data_list = [time_inst_data_list]
+            
+        for i, time_inst_data in enumerate(time_inst_data_list):
+            if isinstance(time_inst_data,self._module._inst_xzt_class):
+                if i == 0:
+                    inst_data = time_inst_data
+                else:
+                    inst_data += time_inst_data
+            else:
+                if i == 0:
+                    inst_data = self._module._inst_xzt_class(time_inst_data,path=path,avg_data=avg_data,*args,**kwargs)
+                else:
+                    inst_data += self._module._inst_xzt_class(time_inst_data,path=path,avg_data=avg_data,*args,**kwargs)
+        
+        self.avg_data = inst_data._avg_data
+
+        self.fluct_data = self._fluct_data_calc(inst_data,self.avg_data)
+
+    def _hdf_extract(self, filename,key=None):
+        if key is None:
+            key= self.__class__.__name__
+
+        self.avg_data = self._module._avg_xzt_class.from_hdf(filename,key=key+"/avg_data")
+        self._meta_data = self._module._meta_class.from_hdf(filename,key=key+"/meta_data")
+        self.fluct_data = fp.FlowStruct3D.from_hdf(filename,key=key+'/fluct_data')
+
+    def _fluct_data_calc(self, inst_data, avg_data):
+        
+        avg_time = list(set([x[0] for x in avg_data.mean_data.index]))
+        
+        assert len(avg_time) == 1, "In this context therecan only be one time in avg_data"
+        fluct = np.zeros((len(inst_data.inst_data.index),*inst_data.shape[:]),dtype=fp.rcParams['dtype'])
+        
+        for j, (time, comp) in enumerate(inst_data.inst_data.index):
+            avg_values = avg_data.mean_data[avg_time[0],comp]
+            inst_values = inst_data.inst_data[time,comp]
+
+            fluct[j] = inst_values - avg_values[None,:,None]
+        return fp.FlowStruct3D(inst_data.inst_data._coorddata,
+                               fluct,
+                               index=inst_data.inst_data.index)        

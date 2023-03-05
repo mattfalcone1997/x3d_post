@@ -875,7 +875,7 @@ class x3d_avg_xz(_AVG_base,stat_xz_handler):
         REN = self.metaDF['re']
         
         tau_w = self.tau_calc(PhyTime)
-        print(tau_w,rho_star,REN)
+
         u_tau_star = np.sqrt(tau_w/rho_star)/np.sqrt(REN)
         delta_v_star = (nu_star/u_tau_star)/REN
         return u_tau_star, delta_v_star
@@ -1158,6 +1158,7 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
         return super()._extract_uumean(path,its,None)
     
     def _extract_avg(self,path,its=None):
+        if its is not None: its = check_list_vals(its)
         super()._extract_avg(its,path,None)
     
     def _hdf_extract(self, fn,key=None):

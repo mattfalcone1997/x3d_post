@@ -158,9 +158,22 @@ class stat_z_handler(stathandler_base,ABC):
     
 class stat_xz_handler(stat_z_handler,ABC):
     _flowstruct_class = fp.FlowStruct1D
-    def _get_data(self,*args,**kwargs):
-        l = super()._get_data(*args,**kwargs)
-        return l.mean(axis=-1)        
+    # def _get_data(self,*args,**kwargs):
+    #     l = super()._get_data(*args,**kwargs)
+    #     return l.mean(axis=-1)
+    
+    def _get_new_data(self,path,name,it,size):
+        fn = self._get_stat_file_z(path,name,it)
+        fsize_new = size*self.NCL[1]*8
+        fsize_old = size*self.NCL[1]*self.NCL[0]*8
+        if os.stat(fn).st_size == fsize_old:
+            return super()._get_new_data(path,name,it,size).mean(axis=-1)
+        elif os.stat(fn).st_size == fsize_new:
+            return read_stat_z_file(fn,(size,self.NCL[1]))
+        else:
+            raise RuntimeError(f"Size of {fn} is incorrect"
+                               f" {os.stat(fn).st_size} vs "
+                               f"{fsize_old} or {fsize_new}")
 
 class stat_xzt_handler(stat_xz_handler,ABC):
     _flowstruct_class = fp.FlowStruct1D_time
@@ -178,12 +191,12 @@ class stat_xzt_handler(stat_xz_handler,ABC):
         return l
     
     def _get_new_data(self,path,name,its,size):
-        shape = (size*len(its), self.NCL[1],self.NCL[0])
-        l = np.zeros(shape)
+        
+        l = [None]*len(its)
         for i, it in enumerate(its):
-            l[i*size:(i+1)*size] = super()._get_new_data(path,name,it,size)
+            l[i] = super()._get_new_data(path,name,it,size)
             
-        return l
+        return np.concatenate(l,axis=0)
 
 class inst_reader(ABC):
     _reader_comps = {'u':'ux',

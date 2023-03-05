@@ -19,8 +19,31 @@ import flowpy as fp
 from flowpy.plotting import (create_fig_ax_with_squeeze,
                              update_line_kw,
                              update_subplots_kw)
+from .utils import get_iterations
+from .temp_accel import temp_accel_base
 
-class x3d_avg_xzt(xp.x3d_avg_xzt):
+class temp_tbl_base(temp_accel_base):
+    @property
+    def _time_shift(self):
+        if not hasattr(self._meta_data,'_ub'):
+            return 0
+        thresh = 1.01
+        index = np.argmin(np.abs(self._meta_data._ub-thresh))
+        time_ref = self._meta_data._tb[index]
+        index = np.argmin(np.abs(self.times-time_ref))
+        return -self.times[index]
+    
+    def _get_its_shift(cls,path) -> int:
+        meta_data = cls._module._meta_class(path)
+        if not hasattr(meta_data,'_ub'):
+            return 0
+        thresh = 1.01
+        index = np.argmin(np.abs(meta_data._ub-thresh))
+        time_ref = meta_data._tb[index]
+        times = meta_data.get_times(get_iterations(path,statistics=True))
+        index = np.argmin(np.abs(times-time_ref))
+        return times[index]
+class x3d_avg_xzt(xp.x3d_avg_xzt,temp_tbl_base):
     y_limit=None
     def _int_thickness_calc(self,PhyTime):
         U_mean = self.mean_data[PhyTime,'u']
@@ -87,7 +110,7 @@ class x3d_avg_xzt(xp.x3d_avg_xzt):
     def _velo_scale_calc(self, PhyTime=None):
 
         return self.mean_data[PhyTime,'u'][0,:].copy()
-
+    U_infty_calc = _velo_scale_calc
     wall_velocity_calc = xp.x3d_avg_xzt.bulk_velo_calc
     plot_wall_velocity = xp.x3d_avg_xzt.plot_bulk_velocity
 
@@ -101,7 +124,6 @@ class x3d_avg_xzt(xp.x3d_avg_xzt):
     def _get_uplus_yplus_transforms(self,PhyTime):
         PhyTime = self.check_PhyTime(PhyTime)
         u_tau, delta_v = self.wall_unit_calc(PhyTime)
-        print(u_tau)
         x_transform = lambda y:  y/delta_v
         y_transform = lambda u: (u[0]-u)/u_tau
         
@@ -295,10 +317,26 @@ class x3d_avg_xzt_conv(x3d_avg_xzt):
         return fig, ax
     
 class meta_x3d(xp.meta_x3d):
-    def _meta_hook(self, params):
-        if "tbltemp_accel" in params:
-            self.wall_velo = params["tbltemp_accel"]["U_w"]
+    def _meta_hook(self, path, params):
+        if  'profile' not in params['tbl_temp_accel']:
+            return
+        
+        elif params['tbl_temp_accel']['profile'] == 'linear':
+            self.metaDF.update({'t_start' : params['tbl_temp_accel']['t_start'],
+                                't_end' : params['tbl_temp_accel']['t_end'],
+                                'U_ratio' : params['tbl_temp_accel']['U_ratio']})
+            self._tb = np.array(params['temp_accel']['t'])
+            self._ub = np.array(params['temp_accel']['U_b'])
 
+        elif params['tbl_temp_accel']['profile'] == 'spatial equiv':
+            self.metaDF.update({'U_ratio' : params['tbl_temp_accel']['U_ratio'],
+                                'x0' : params['tbl_temp_accel']['x0'],
+                                'alpha_accel' : params['tbl_temp_accel']['alpha_accel']})
+        
+            data = np.loadtxt(os.path.join(path,'theta.csv'),delimiter=',')
+            self._ub = data[:,2]
+            self._tb = data[:,0]*self.metaDF['dt']
+        
     def save_hdf(self, fn, mode, key=None):
         key = self._get_hdf_key(key)
 
@@ -328,7 +366,7 @@ _inst_xzt_class = x3d_inst_xzt
 
 # _fluct_xzt_class = x3d_fluct_xzt
 
-class x3d_budget_xzt(xp.x3d_budget_xzt):
+class x3d_budget_xzt(xp.x3d_budget_xzt,temp_tbl_base):
     pass
 
 class x3d_mom_balance_xzt(xp.x3d_mom_balance_xzt):

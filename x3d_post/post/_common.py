@@ -106,6 +106,7 @@ class CommonTemporalData(CommonData):
 
         base_object = objects[0].copy()
         object_attrs = base_object.__dict__.keys()
+        time_shifts = [x._time_shift for x in objects]
         
         for attr in object_attrs:
             vals = [getattr(ob,attr) for ob in objects]
@@ -123,7 +124,6 @@ class CommonTemporalData(CommonData):
                                                items=items))
             elif issubclass(val_type,fp.FlowStructND):
                     
-                time_shifts = [x._time_shift for x in objects]
                 vals = [val.copy().shift_times(shift) \
                             for val,shift in zip(vals,time_shifts)]
                 
@@ -136,12 +136,12 @@ class CommonTemporalData(CommonData):
                 setattr(base_object,attr,phase_val)
                 
             else:
-                cls._type_hook(base_object,attr,vals)
+                cls._type_hook(base_object,attr,vals,time_shifts)
 
         return base_object
     
     @classmethod
-    def _type_hook(cls,base_object,attr,vals):
+    def _type_hook(cls,base_object,attr,vals,time_shifts):
         pass
     
     @abstractproperty

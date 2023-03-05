@@ -974,8 +974,8 @@ class momentum_balance_base(budgetBase):
         
         return data
  
-    def _integate_budget(self,array):
-        y = self.CoordDF['y']
+    def _integrate_budget(self,array):
+        y = self.budget_data.CoordDF['y']
         if self.Domain.is_channel:
             y_mid = (array.shape[0]+1)//2
             array_half = array[:y_mid][::-1]
@@ -1038,8 +1038,7 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
         
         return -1*(duudx + duvdy)
 
-    def plot_balance(self, x_list,PhyTime=None,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.avg_data.check_PhyTime(PhyTime)
+    def plot_balance(self, x_list,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
         x_list = check_list_vals(x_list)
         x_list = self.CoordDF.get_true_coords('x',x_list)
 
@@ -1076,8 +1075,7 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
         return fig, ax[0] if single_input else ax
     
 
-    def plot_integrated_budget(self,x_list,budget_terms=None,PhyTime=None, fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.avg_data.check_PhyTime(PhyTime)
+    def plot_integrated_budget(self,x_list,budget_terms=None, fig=None, ax =None,line_kw=None,**kwargs):
         x_list = check_list_vals(x_list)
         budget_terms = self._check_terms(budget_terms)
 
@@ -1089,13 +1087,13 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
                 
                 line_kw['label'] = self.title_with_math(comp)
                 
-                budget = self.budget_data[PhyTime,comp]
-                int_budget = self._integate_budget(budget)
+                budget = self.budget_data[None,comp]
+                int_budget = self._integrate_budget(budget)
                 
                 fig, ax[i] = self.budget_data.plot_line_data(int_budget,
                                                           'y',
                                                           x_loc,
-                                                          time=PhyTime,
+                                                          time=None,
                                                           channel_half=True,
                                                           fig=fig,
                                                           ax=ax[i],
@@ -1192,7 +1190,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
             line_kw['label'] = self.title_with_math(comp)
             budget = self.budget_data[PhyTime,comp]
 
-            int_budget = self._integate_budget(budget)
+            int_budget = self._integrate_budget(budget)
             fig, ax = self.budget_data.plot_line_data(int_budget,
                                                     time=PhyTime,
                                                     channel_half=True,

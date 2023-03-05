@@ -156,7 +156,7 @@ class x3d_avg_z(xp.x3d_avg_z):
 _avg_z_class = x3d_avg_z
 
 class meta_x3d(xp.meta_x3d):
-    def _meta_hook(self, params):
+    def _meta_hook(self, path, params):
         self.u_infty = params["tbl_recy"]["u_infty"]
 
     def save_hdf(self, fn, mode, key=None):

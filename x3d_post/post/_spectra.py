@@ -2,19 +2,21 @@ from ._common import CommonData, CommonTemporalData
 from ._average import (x3d_avg_xz,
                        x3d_avg_xzt,
                        x3d_avg_z)
+from ._fluct import x3d_fluct_xzt
 from ._data_handlers import (stathandler_base,
                              stat_xz_handler,
                              stat_z_handler)
 
+from ..utils import get_iterations
 import os
 import numpy as np
 import flowpy as fp
 import pyfftw
-
+import json
 pyfftw.config.PLANNER_EFFORT = 'FFTW_ESTIMATE'
 pyfftw.interfaces.cache.enable()
 
-from pyfftw.interfaces.numpy_fft import irfft, ifft
+from pyfftw.interfaces.numpy_fft import irfft, ifft, rfftn, irfftn, fft, rfft
 
 from flowpy.plotting import (update_subplots_kw,
                              create_fig_ax_with_squeeze,
@@ -22,6 +24,7 @@ from flowpy.plotting import (update_subplots_kw,
                              update_line_kw)
 _avg_xz_class = x3d_avg_xz
 _avg_xzt_class = x3d_avg_xzt
+_fluct_xzt_class = x3d_fluct_xzt
 _avg_z_class = x3d_avg_z
 
 import scipy
@@ -176,8 +179,11 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
     def _process_spectra(self,path,it,it0,l,comps,kx, kz):
         dudx_mean = self._extract_dudxmean(path,it,it0)
         
-        if 'spectra_ylocs' in self.metaDF.keys():
-            n = len(self.metaDF['spectra_ylocs'])
+        with open(os.path.join(path,'statistics.json'),'r') as f:
+            stat_params = json.load(f).get("spectra_corr",None)
+            
+        if stat_params is not None:
+            n = len(stat_params['y_locs'])
             spectra_corr_comps = ["%s_corr%d"%(c,i) for c in ['uu','vv','ww']\
                                     for i in range(1,n+1)]
         else:
@@ -195,7 +201,7 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
             
             if comp in spectra_corr_comps:
                 ind = int(comp[-1])-1
-                yloc = self.metaDF['spectra_ylocs'][ind]
+                yloc = stat_params['y_locs'][ind]
                 new_comp = comp[:-1] + '_y' +str(yloc)
                 comps[i] = new_comp
         
@@ -557,6 +563,32 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
     
 class x3d_spectra_xzt(x3d_spectra_xz,CommonTemporalData):
     _flowstruct_class = fp.FlowStructND_time
+    
+    @classmethod
+    def from_window(cls,its,path,**kwargs):
+        path_its = get_iterations(path)
+        meta = cls._module._meta_class(path)
+        
+        spectra = cls(its,path,**kwargs)
+        for it in its:
+            t0 = meta.get_time(it)
+            hwidth = kwargs.pop('hwidth')
+            window_its = [i for i in path_its if \
+                         abs(meta.get_time(i)-t0) < hwidth]
+            
+            window_its.remove(it)
+            for i, itw in enumerate(window_its):
+                a = (i+1)/(i+2)
+                b = 1/(i+2)
+                
+                t = meta.get_time(itw)
+                lspectra = cls(itw,path,**kwargs)
+                for comp in spectra.spectra_data.inner_index:
+                    spectra.spectra_data[t0,comp] = a*spectra.spectra_data[t0,comp]\
+                                                    + b*lspectra.spectra_data[t,comp]
+            
+        return spectra
+                                                        
     @property
     def _get_avg_data(self):
         return self._module._avg_xzt_class
@@ -565,12 +597,98 @@ class x3d_spectra_xzt(x3d_spectra_xz,CommonTemporalData):
     def times(self):
         return self.spectra_data.times
     
-    def _spectra_extract(self, its, path):
+    @classmethod
+    def from_instant(cls,it,path,**spectra_params):
+        return cls(it,path,from_inst=True,**spectra_params)
+    
+    def _compute_2d_rfft(self,array:np.ndarray)->np.ndarray:
+        
+        return 0.5*fft(rfft(array,axis=0,norm='forward'),axis=2,norm='forward')/np.pi
+    
+    def _compute_spectra_2d(self,spec1: np.ndarray, spec2: np.ndarray)-> np.ndarray: 
+        L_x = self.CoordDF['x'][-1] - self.CoordDF['x'][0]
+        L_z = self.CoordDF['z'][-1] - self.CoordDF['z'][0]
+        return spec1.conj()*spec2*L_x*L_z
+    
+    def _get_spectra_from_inst(self,it,path,spectra_level=1):
+        fluct_data = self._module._fluct_xzt_class(it,path=path,
+                                                  avg_data=self.avg_data)
+        
+        nspectra = {1:4,2:8}
+        shape= (nspectra[spectra_level],self.NCL[2]//2+1,self.NCL[1],(self.NCL[0]))
+        data = np.zeros(shape,dtype='c16')
+        
+        z = self.CoordDF['z']
+        x = self.CoordDF['x']
+        
+        dx = x[1] - x[0]
+        dz = z[1] - z[0]
+
+        k_z = 2.*np.pi*np.fft.rfftfreq(2*(shape[1]-1),dz)
+        k_x = 2.*np.pi*np.fft.fftfreq(shape[3],dx)
+        
+        if spectra_level >= 1:
+            u_hat = self._compute_2d_rfft(fluct_data.fluct_data['u'])
+            v_hat = self._compute_2d_rfft(fluct_data.fluct_data['v'])
+            w_hat = self._compute_2d_rfft(fluct_data.fluct_data['w'])
+            
+            data[0] = self._compute_spectra_2d(u_hat,u_hat)
+            data[1] = self._compute_spectra_2d(v_hat,v_hat)
+            data[2] = self._compute_spectra_2d(w_hat,w_hat)
+            data[3] = self._compute_spectra_2d(u_hat,v_hat)
+            comps = ['uu','vv','ww','uv']
+        
+        if spectra_level >= 2:
+            p_hat = self._compute_2d_rfft(fluct_data.fluct_data['p'])
+            
+            dudx_hat = 1.0j*k_x[None,None,:]*u_hat
+            dwdz_hat = 1.0j*k_z[:,None,None]*w_hat
+            
+            dvdy = fp.Grad_calc(self.avg_data.CoordDF,fluct_data.fluct_data['v'],'y')
+            dvdy_hat = self._compute_2d_rfft(dvdy)
+            
+            data[4] = 2.*self._compute_spectra_2d(p_hat,dudx_hat)
+            data[5] = 2.*self._compute_spectra_2d(p_hat,dvdy_hat)
+            data[6] = 2.*self._compute_spectra_2d(p_hat,dwdz_hat)
+            
+            dudx_mean = self._extract_dudxmean(path,it,None)
+            dwdx_hat = 1.0j*k_x[None,None,:]*w_hat
+            dudz_hat = 1.0j*k_z[:,None,None]*u_hat
+
+            omega_y_hat = dudz_hat-dwdx_hat
+            omega_spec = self._compute_spectra_2d(omega_y_hat,v_hat)
+            data[7] = -1.0j*dudx_mean['dudy'][None,:,None]*k_z[:,None,None]*omega_spec
+            
+            comps.extend(['pdudx','pdvdy','pdwdz','omega_y'])
+            
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        CoordDF = fp.coordstruct({'k_z':k_z,
+                                  'y':self.CoordDF['y'],
+                                  'k_x':k_x})
+
+        coorddata = fp.AxisData(geom, CoordDF, coord_nd=None)
+
+        index = self._get_index(it,comps)
+        if self.Domain.is_channel:
+            noflip = ['omega_y']
+            for i,comp in enumerate(index[1]):
+                data[i] = self._apply_symmetry(comp,data[i],1,noflip=noflip)
+
+        return self._flowstruct_class(coorddata,
+                                      data,
+                                      data_layout=('k_z','y','k_x'),
+                                      wall_normal_line='y',
+                                      index=index)
+
+    def _spectra_extract(self, its, path,from_inst=False,**kwargs):
         
         self.avg_data = self._get_avg_data(path,its=its)
-        
+        its = fp.check_list_vals(its)
         for i, it in enumerate(its):
-            spectra = self._get_spectra_data(it,path,None)
+            if from_inst:
+                spectra = self._get_spectra_from_inst(it,path,**kwargs)
+            else:
+                spectra = self._get_spectra_data(it,path,None)
             if i ==0:
                 self.spectra_data = spectra
             else:
@@ -687,8 +805,11 @@ class x3d_spectra_z(stat_z_handler,spectra_base):
     def _process_spectra(self,path,it,it0,l,comps, kz):
         dudx_mean = self._extract_dudxmean(path,it,it0)
         
-        if 'spectra_ylocs' in self.metaDF.keys():
-            n = len(self.metaDF['spectra_ylocs'])
+        with open(os.path.join(path,'statistics.json'),'r') as f:
+            stat_params = json.load(f).get("spectra_corr",None)
+            
+        if stat_params is not None:
+            n = len(stat_params['y_locs'])
             spectra_corr_comps = ["%s_corr%d"%(c,i) for c in ['uu','vv','ww']\
                                     for i in range(1,n+1)]
         else:
@@ -706,7 +827,7 @@ class x3d_spectra_z(stat_z_handler,spectra_base):
             
             if comp in spectra_corr_comps:
                 ind = int(comp[-1])-1
-                yloc = self.metaDF['spectra_ylocs'][ind]
+                yloc = stat_params['y_locs'][ind]
                 new_comp = comp[:-1] + '_y' +str(yloc)
                 comps[i] = new_comp
                 
@@ -883,9 +1004,11 @@ class x3d_autocorr_x(CommonData,stathandler_base):
     def _autocorr_extract(self,it,path,it0=None):
                
         self.avg_data = self._get_avg_data(it,path,it0)
-
-        shape = self.metaDF['autocorr_shape']
-        x_locs = np.array(self.metaDF['autocorr_x_locs'])
+        with open(os.path.join(path,'statistics.json'),'r') as f:
+            stat_params = json.load(f).get("autocorrelation")
+            
+        shape = stat_params['shape']
+        x_locs = np.array(stat_params['x_locs'])
         fn = self._get_stat_file_z(path,'autocorr_mean',it)
         l = np.fromfile(fn,dtype='f8').reshape(shape,order='F')
 

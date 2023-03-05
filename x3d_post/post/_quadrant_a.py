@@ -20,6 +20,8 @@ from itertools import product
 import numpy as np
 from ..style import get_symbol
 
+import json
+import os
 _meta_class = meta_x3d
 _avg_z_class = x3d_avg_z
 _avg_xz_class = x3d_avg_xz
@@ -84,7 +86,9 @@ class _quadrant_base(CommonData,stathandler_base):
         return Quadrants
         
     def _extract_uvq(self,path,it,it0):
-        h_quads = self.metaDF['h_quads']
+        with open(os.path.join(path,'statistics.json'),'r') as f:
+            stat_params = json.load(f)
+        h_quads = stat_params['uv_quadrant']['h_quads']
         
         l = self._get_data(path,'uv_quadrant_mean',None,it,len(h_quads)*4)
 
@@ -124,7 +128,7 @@ class x3d_quadrant_z(_quadrant_base,stat_z_handler):
         
         self.quad_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/quad_data')
         
-    def plot_line(self,h_list,coord, prop_dir,x_val=0,y_mode_wall=True,Quadrants=None,norm=False,fig=None,ax=None,line_kw=None,**kwargs):
+    def plot_line(self,h_list,prop_dir,coord,x_val=0,y_mode_wall=True,Quadrants=None,norm=False,fig=None,ax=None,line_kw=None,**kwargs):
         
         if prop_dir == 'x':
             if y_mode_wall:

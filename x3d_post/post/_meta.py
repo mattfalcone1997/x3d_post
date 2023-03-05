@@ -50,6 +50,11 @@ class meta_x3d(Common):
             h_quads = params['uv_quadrant']['h_quads']
             self.metaDF['h_quads'] = h_quads
         
+        if 'window' in params:
+            fn = params['window']['file']
+            data = np.loadtxt(os.path.join(path,fn)).squeeze()
+            self.metaDF['outputs'] = data
+            
         if 'autocorrelation' in params:
             shape = params['autocorrelation']['shape']
             x_locs = params['autocorrelation']['x_locs']
@@ -65,7 +70,7 @@ class meta_x3d(Common):
 
         self._extract_run_params(path)
         
-        self._meta_hook(params) 
+        self._meta_hook(path,params) 
                
     def _extract_run_params(self,path):
         fn = join(path,'run_log.json')
@@ -117,7 +122,7 @@ class meta_x3d(Common):
         it0 = self._run_params.index[it>index][-1]
         return self._run_params['dt'][it0]
         
-    def _meta_hook(self,params):
+    def _meta_hook(self,path,params):
         pass
     
     def _hdf_extract(self,fn, key=None):

@@ -2,7 +2,10 @@ from . import post as xp
 import types
 import numpy as np
 from abc import ABC
+import flowpy as fp
+import os
 import scipy
+from itertools import product
 from numbers import Number
 from .post._common import CommonTemporalData
 
@@ -17,7 +20,7 @@ from flowpy.plotting import (update_subplots_kw,
                              )
 from .utils import get_iterations
 class meta_x3d(xp.meta_x3d):
-    def _meta_hook(self, params):
+    def _meta_hook(self, path, params):
         if params['temp_accel']['profile'] == 'linear':
             self.metaDF.update({'t_start' : params['temp_accel']['t_start'],
                                 't_end' : params['temp_accel']['t_end'],
@@ -30,17 +33,37 @@ class meta_x3d(xp.meta_x3d):
         self._tb = np.array(params['temp_accel']['t'])
         self._ub = np.array(params['temp_accel']['U_b'])
 
+        bf_path = os.path.join(path,'body_force')
+        if os.path.isdir(bf_path):
+            comp = ['f']
+            files = os.listdir(bf_path)
+            times = [self.get_time(int(f[-7:])) for f in files]
+            data = []
+            index = list(product(times,comp))
+            for f in files:
+                data.append(np.fromfile(os.path.join(bf_path,f),dtype='f8'))
+
+
+            self.bf = fp.FlowStruct1D_time(self.coorddata,np.stack(data,axis=0),index=index)
+
     def _hdf_extract(self, fn, key=None):
+        key = self._get_hdf_key(key)
         hdf_obj = super()._hdf_extract(fn, key)
         
         self._ub = hdf_obj['ub'][:]
         self._tb = hdf_obj['tb'][:]
+        if 'bf' in hdf_obj.keys():
+            self.bf = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/bf')
+            
         return hdf_obj
     
     def save_hdf(self, fn, mode, key=None):
         hdf_obj = super().save_hdf(fn, mode, key)
         hdf_obj.create_dataset('ub',data=self._ub)
         hdf_obj.create_dataset('tb',data=self._tb)
+        if hasattr(self,'bf'):
+            self.bf.to_hdf(fn,'a',key=key+'/bf')
+            
         return hdf_obj
     
 _meta_class  = meta_x3d
@@ -78,7 +101,18 @@ class x3d_inst_xzt(xp.x3d_inst_xzt):
     pass
 
 class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
-    
+    @classmethod
+    def _type_hook(cls, base_object, attr, vals,time_shifts):
+        if attr == '_meta_data' and hasattr(vals[0],'bf'):
+            bfs = [val.bf.shift_times(shift) \
+                        for val,shift in zip(vals,time_shifts)]
+            
+            times_list = [bf.times for bf in bfs]
+
+            bfs = base_object._handle_time_remove(bfs,times_list)
+            vals[0].bf = bfs[0]
+            setattr(base_object,attr,vals[0])
+            
     def conv_distance_calc(self,t0=None):
             
         bulk_velo = self.velo_scale_calc()
@@ -280,5 +314,7 @@ class x3d_quadrant_xzt(xp.x3d_quadrant_xzt,temp_accel_base):
 class x3d_Cf_Renard_xzt(xp.x3d_Cf_Renard_xzt,temp_accel_base):
     pass
 
+class x3d_quadrant_xzt(xp.x3d_quadrant_xzt,temp_accel_base):
+    pass
 class line_probes(xp.line_probes):
     pass
