@@ -48,6 +48,10 @@ class _fluct_base(CommonData):
     def Domain(self):
         return self.fluct_data.Domain
 
+    @abstractmethod
+    def _get_avg_slice(self,inst_data,avg_data):
+        pass
+    
     @classmethod
     def from_hdf(cls,file_name,key=None):
         return cls(file_name,from_hdf=True,key=key)
@@ -304,14 +308,32 @@ class x3d_fluct_z(_fluct_base):
         fluct = np.zeros((len(inst_data.inst_data.index),*inst_data.shape[:]),dtype=fp.rcParams['dtype'])
         j=0
         
+        avg_index = self._get_avg_slice(inst_data.inst_data,
+                                        avg_data.mean_data)
         for j, (time, comp) in enumerate(inst_data.inst_data.index):
             avg_values = avg_data.mean_data[avg_time[0],comp]
             inst_values = inst_data.inst_data[time,comp]
-
-            fluct[j] = inst_values - avg_values
+            fluct[j] = inst_values - avg_values[avg_index[0]][avg_index[1]]
         return fp.FlowStruct3D(inst_data.inst_data._coorddata,
                                fluct,
                                index=inst_data.inst_data.index)
+        
+    def _get_avg_slice(self,inst_struct: fp.FlowStruct3D, mean_struct: fp.FlowStruct2D):
+        coords_inst = inst_struct.CoordDF
+        coords_avg = mean_struct.CoordDF
+        
+        if not all(any(np.isclose(coords_avg['y'],y)) for y in coords_inst['y']):
+            raise ValueError("y coords do not match")
+        
+        if not all(any(np.isclose(coords_avg['x'],x)) for x in coords_inst['x']):
+            raise ValueError("x coords do not match")
+        
+        y_indices =[ np.argmin(abs(coords_avg['y'] -y)) for y in coords_inst['y']]
+        x_indices =[ np.argmin(abs(coords_avg['x'] -x)) for x in coords_inst['x']]
+        
+        # flat_index = np.ravel_multi_index([(y_indices,slice(None)),(slice(None),x_indices)],dims=inst_struct.shape[1:])
+        # return np.unravel_index(flat_index,inst_struct.shape)
+        return (y_indices,slice(None)),(slice(None),x_indices)
         
 class x3d_fluct_xzt(_fluct_base):
     def _fluct_extract(self,time_inst_data_list,avg_data=None,path='.',*args,**kwargs):

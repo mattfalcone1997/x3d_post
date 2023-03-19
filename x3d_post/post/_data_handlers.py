@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import os
 from ..utils import check_path
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from numbers import Number
 def read_parameters(path):
@@ -31,7 +32,7 @@ class stathandler_base(ABC):
 
         stat_path = os.path.join(path,'statistics')
 
-        fn = name + '.dat'+ str(it).zfill(7)
+        fn = name + '.dat%.7d'%it
 
         return os.path.join(stat_path,fn)
     
@@ -74,7 +75,7 @@ class stathandler_base(ABC):
             raise FileNotFoundError(f"Directory {path} not found")
         
         stat_path = os.path.join(path,'statistics')
-        fn = os.path.join(stat_path,'umean.dat'+ str(it).zfill(7))
+        fn = os.path.join(stat_path,'uvwp_mean.dat%.7d'%it)
 
         return os.path.isfile(fn)
     
@@ -191,10 +192,15 @@ class stat_xzt_handler(stat_xz_handler,ABC):
         return l
     
     def _get_new_data(self,path,name,its,size):
-        
         l = [None]*len(its)
-        for i, it in enumerate(its):
-            l[i] = super()._get_new_data(path,name,it,size)
+        with ThreadPoolExecutor(max_workers=fp.rcParams['file_workers']) as t:
+            results = {t.submit(stat_xz_handler._get_new_data,self,
+                                path, name,its[i],size):i for i in range(len(its))}
+            for data in as_completed(results):
+                l[results[data]] = data.result()
+
+        # for i, it in enumerate(its):
+        #     l[i] = super()._get_new_data(path,name,it,size)
             
         return np.concatenate(l,axis=0)
 
@@ -234,7 +240,7 @@ class inst_reader(ABC):
 
         self._check_comps(comps)
 
-        xml_fn = join(data_folder,'snapshot-%s.xdmf'%str(it).zfill(7))
+        xml_fn = join(data_folder,'snapshot-%.7d.xdmf'%it)
         shape, geom_data = self._extract_xml(xml_fn)
 
         geom = fp.GeomHandler(self.metaDF['itype'])
@@ -247,7 +253,7 @@ class inst_reader(ABC):
         l =[]
         for comp in comps:
             c = self._reader_comps[comp]
-            fn = join(data_folder,'%s-%s.bin'%(c,str(it).zfill(7)))
+            fn = join(data_folder,'%s-%.7d.bin'%(c,it))
 
             data = np.fromfile(fn,dtype='f8').reshape(shape)
             l.append(data)

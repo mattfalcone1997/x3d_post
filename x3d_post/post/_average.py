@@ -28,7 +28,7 @@ from flowpy.plotting import (update_subplots_kw,
                              update_line_kw,
                              )
 from flowpy.utils import (check_list_vals,)
-
+from itertools import chain
 _meta_class = meta_x3d
 
 class _AVG_base(CommonData,stathandler_base,ABC):
@@ -47,14 +47,16 @@ class _AVG_base(CommonData,stathandler_base,ABC):
         self.mean_data = self._extract_umean(path,it,it0)
         self.uu_data = self._extract_uumean(path,it,it0)
         
-        fn = self._get_stat_file_z(path,'uuu_mean',it)
-        if os.path.isfile(fn):
+        if self._has_data(path,'uuu_mean'):
             self.uuu_data = self._extract_uuumean(path,it,it0)
         
-        fn = self._get_stat_file_z(path,'uuuu_mean',it)
-        if os.path.isfile(fn):
+        if self._has_data(path,'uuuu_mean'):
             self.uuuu_data = self._extract_uuuumean(path,it,it0)
       
+    def _has_data(self,path,comp):
+        path = os.path.join(path,'statistics')
+        files = os.listdir(path)
+        return any(comp in f for f in files)
     
     @abstractmethod
     def Wall_Coords(self,*args,**kwargs):
@@ -206,8 +208,11 @@ class _AVG_base(CommonData,stathandler_base,ABC):
             it0_ = self._get_nstat(it0)
 
             l = (it_*l - it0_*l0) / (it_ - it0_)
-        l = l[[0,6,8]]
-        
+        if hasattr(it,'__iter__'):
+            items = list(chain(*[ np.array([0,6,8])+10*i for i in range(len(it))]))
+            l = l[items]
+        else:
+            l = l[[0,6,8]]
         geom = fp.GeomHandler(self.metaDF['itype'])
         coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
 

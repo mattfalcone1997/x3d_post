@@ -36,6 +36,8 @@ class budgetBase(CommonData,ABC):
             self._hdf_extract(*args,**kwargs)
         else:
             self._budget_init(*args,**kwargs)
+        
+        self._symbols = {}
 
     def _budget_init(self,comp,it,path,it0=None):
 
@@ -149,6 +151,12 @@ class budgetBase(CommonData,ABC):
                 if math_split[i] != math_split[i].upper():
                     math_split[i] = math_split[i].title()
         return "$".join(math_split)
+    
+    def set_symbols(self,symbols: dict):
+        for k, v in symbols.items():
+            if k in self.budget_data.inner_index:
+                self._symbols[k] = v
+        
 
 class ReynoldsBudget_base(stathandler_base,ABC):
     def _budget_extract(self,comp):
@@ -560,9 +568,8 @@ class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
         else:
             return None, None
 
-    def plot_budget(self, x_list,PhyTime=None,budget_terms=None, wall_units=True,fig=None, ax =None,line_kw=None,**kwargs):
+    def plot_budget(self, x_list,budget_terms=None, wall_units=True,fig=None, ax =None,line_kw=None,**kwargs):
         
-        PhyTime = self.avg_data.check_PhyTime(PhyTime)
         x_list = check_list_vals(x_list)
         x_list = self.CoordDF.get_true_coords('x',x_list)
 
@@ -574,11 +581,10 @@ class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
 
         for i,x_loc in enumerate(x_list):
             x = self.CoordDF.index_calc('x',x_loc)[0]
-            y_plus, budget_scale = self._wallunit_generator(x,PhyTime,wall_units)
+            y_plus, budget_scale = self._wallunit_generator(x,None,wall_units)
             for comp in budget_terms:
-                
-                line_kw['label'] = self.title_with_math(comp)
-                fig, ax[i] = self.budget_data.plot_line(comp,'y',x_loc,time=PhyTime,channel_half=True,
+                line_kw['label'] = self.title_with_math(self._symbols.get(comp,comp))
+                fig, ax[i] = self.budget_data.plot_line(comp,'y',x_loc,time=None,channel_half=True,
                                                     transform_xdata=y_plus,
                                                     transform_ydata=budget_scale,
                                                     fig=fig,ax=ax[i],line_kw=line_kw)
@@ -782,7 +788,6 @@ class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
             return None, None        
 
     def plot_budget(self, PhyTime=None,budget_terms=None, wall_units=True,fig=None, ax =None,line_kw=None,**kwargs):
-        PhyTime = self.avg_data.check_PhyTime(PhyTime)
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
         budget_terms = self._check_terms(budget_terms)
         line_kw= update_line_kw(line_kw)
@@ -791,7 +796,7 @@ class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
 
         for comp in budget_terms:
                 
-            line_kw['label'] = self.title_with_math(comp)
+            line_kw['label'] = self.title_with_math(self._symbols.get(comp,comp))
             fig, ax = self.budget_data.plot_line(comp,time=PhyTime,
                                                 transform_xdata=y_plus,
                                                 transform_ydata=budget_scale,
@@ -936,7 +941,7 @@ class x3d_budget_xzt(budget_xzt_base,stat_xzt_handler,x3d_budget_xz):
     
     
 class momentum_balance_base(budgetBase):
-    def __init__(self,comp,avg_data):
+    def _budget_init(self,comp,avg_data):
         
         self._get_stat_data(avg_data)
 
@@ -1050,7 +1055,7 @@ class x3d_mom_balance_z(momentum_balance_base,budgetBase):
 
         for i,x_loc in enumerate(x_list):
             for comp in budget_terms:
-                line_kw['label'] = self.title_with_math(comp)
+                line_kw['label'] = self.title_with_math(self._symbols.get(comp,comp))
                 fig, ax[i] = self.budget_data.plot_line(comp,'y',x_loc,channel_half=True,
                                                     fig=fig,ax=ax[i],line_kw=line_kw)
             
@@ -1187,7 +1192,7 @@ class x3d_mom_balance_xz(momentum_balance_base,budgetBase):
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
 
         for comp in budget_terms:
-            line_kw['label'] = self.title_with_math(comp)
+            line_kw['label'] = self.title_with_math(self._symbols.get(comp,comp))
             budget = self.budget_data[PhyTime,comp]
 
             int_budget = self._integrate_budget(budget)
@@ -1379,7 +1384,7 @@ class _FIK_developing_base(_FIK_base):
         for comp in budget_terms:
             budget_term = self.budget_data[comp].copy()
                 
-            label = self.title_with_math(comp)
+            label = self.title_with_math(self._symbols.get(comp,comp))
             ax.cplot(xaxis_vals,budget_term,label=label,**line_kw)
         if plot_total:
             ax.cplot(xaxis_vals,np.sum(self.budget_data.values,axis=0),label="Total",**line_kw)
@@ -1538,8 +1543,8 @@ class Cf_Renard_base(budgetBase):
 
         for comp in budget_terms:
             budget_term = self.budget_data[comp].copy()
-                
-            label = self.title_with_math(comp)
+            label = self.title_with_math(self._symbols.get(comp,comp))
+
             ax.cplot(xaxis_vals,budget_term,label=label,**line_kw)
         if plot_total:
             ax.cplot(xaxis_vals,np.sum(self.budget_data.values,axis=0),label="Total",**line_kw)
