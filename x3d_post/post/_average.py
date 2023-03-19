@@ -1205,6 +1205,17 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
     def _return_xaxis(self):
         return self.times
     
+    def window(self,method,*args,**kwargs):
+        
+        self.mean_data.window(method,*args,**kwargs)
+        self.uu_data.window(method,*args,**kwargs)
+        
+        if hasattr(self,'uuu_data'):
+            self.uuu_data.window(method,*args,**kwargs)
+            
+        if hasattr(self,'uuuu_data'):
+            self.uuuu_data.window(method,*args,**kwargs)
+            
     def wall_unit_calc(self,PhyTime=None):
         """
         returns arrays for the friction velocity and viscous lengthscale

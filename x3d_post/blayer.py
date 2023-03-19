@@ -1,7 +1,4 @@
 import numpy as np
-import pandas as pd
-import os
-from abc import ABC
 import scipy
 
 if scipy.__version__ >= '1.6':
@@ -12,8 +9,6 @@ else:
 from scipy.interpolate import interp1d
 
 import x3d_post.post as xp
-from x3d_post.post._readers import read_parameters
-import flowpy as fp
 from flowpy.plotting import (create_fig_ax_with_squeeze,
                              update_line_kw,
                              update_subplots_kw)
