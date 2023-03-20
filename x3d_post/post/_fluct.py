@@ -366,17 +366,31 @@ class x3d_fluct_xzt(_fluct_base):
         self.fluct_data = fp.FlowStruct3D.from_hdf(filename,key=key+'/fluct_data')
 
     def _fluct_data_calc(self, inst_data, avg_data):
-        
-        avg_time = list(set([x[0] for x in avg_data.mean_data.index]))
-        
-        assert len(avg_time) == 1, "In this context therecan only be one time in avg_data"
+                
         fluct = np.zeros((len(inst_data.inst_data.index),*inst_data.shape[:]),dtype=fp.rcParams['dtype'])
+        if not all(time in avg_data.times for time in inst_data.times):
+            raise RuntimeError("Time not in avg data")
         
+        yindices = self._get_avg_slice(inst_data.inst_data,
+                                       avg_data.mean_data)
         for j, (time, comp) in enumerate(inst_data.inst_data.index):
-            avg_values = avg_data.mean_data[avg_time[0],comp]
+            avg_values = avg_data.mean_data[time,comp]
             inst_values = inst_data.inst_data[time,comp]
 
-            fluct[j] = inst_values - avg_values[None,:,None]
+            fluct[j] = inst_values - avg_values[None,yindices,None]
         return fp.FlowStruct3D(inst_data.inst_data._coorddata,
                                fluct,
                                index=inst_data.inst_data.index)        
+        
+    def _get_avg_slice(self,inst_struct: fp.FlowStruct3D, mean_struct: fp.FlowStruct1D):
+        coords_inst = inst_struct.CoordDF
+        coords_avg = mean_struct.CoordDF
+        
+        if not all(any(np.isclose(coords_avg['y'],y)) for y in coords_inst['y']):
+            raise ValueError("y coords do not match")
+        
+        y_indices =[ np.argmin(abs(coords_avg['y'] -y)) for y in coords_inst['y']]
+        
+        # flat_index = np.ravel_multi_index([(y_indices,slice(None)),(slice(None),x_indices)],dims=inst_struct.shape[1:])
+        # return np.unravel_index(flat_index,inst_struct.shape)
+        return y_indices

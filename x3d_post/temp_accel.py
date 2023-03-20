@@ -82,23 +82,33 @@ class temp_accel_base(CommonTemporalData,ABC):
     
     @property
     def _time_shift(self):
-        thresh = 1.01
-        index = np.argmin(np.abs(self._meta_data._ub-thresh))
-        time_ref = self._meta_data._tb[index]
-        index = np.argmin(np.abs(self.times-time_ref))
-        return -self.times[index]
+        if 't_start' in self.metaDF:
+            return - self.metaDF['t_start']
+        else:
+            thresh = 1.01
+            index = np.argmin(np.abs(self._meta_data._ub-thresh))
+            time_ref = self._meta_data._tb[index]
+            index = np.argmin(np.abs(self.times-time_ref))
+            return -self.times[index]
     
     def _get_its_shift(cls,path) -> int:
         meta_data = cls._module._meta_class(path)
-        thresh = 1.01
-        index = np.argmin(np.abs(meta_data._ub-thresh))
-        time_ref = meta_data._tb[index]
-        times = meta_data.get_times(get_iterations(path,statistics=True))
-        index = np.argmin(np.abs(times-time_ref))
-        return times[index]
+        if 't_start' in meta_data.metaDF:
+            return - meta_data.metaDF['t_start']
+        else:
+            thresh = 1.01
+            index = np.argmin(np.abs(meta_data._ub-thresh))
+            time_ref = meta_data._tb[index]
+            times = meta_data.get_times(get_iterations(path,statistics=True))
+            index = np.argmin(np.abs(times-time_ref))
+            return times[index]
     
 class x3d_inst_xzt(xp.x3d_inst_xzt):
     pass
+_inst_xzt_class = x3d_inst_xzt
+class x3d_fluct_xzt(xp.x3d_fluct_xzt):
+    pass
+_fluct_xzt_class = x3d_fluct_xzt
 
 class x3d_avg_xzt(xp.x3d_avg_xzt,temp_accel_base):
     @classmethod

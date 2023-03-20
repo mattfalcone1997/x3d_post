@@ -32,7 +32,8 @@ from ._spectra import (x3d_spectra_xz,
                        x3d_spectra_z,
                        x3d_autocorr_x)
 
-from ._fluct import x3d_fluct_z
+from ._fluct import (x3d_fluct_z,
+                     x3d_fluct_xzt)
 from ._data_handlers import (read_stat_z_file,
                              read_parameters)
 _meta_class = meta_x3d

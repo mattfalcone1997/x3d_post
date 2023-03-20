@@ -58,6 +58,10 @@ class _Inst_base(CommonData,inst_reader,ABC):
     def Domain(self):
         return self.inst_data.Domain
 
+    @property
+    def times(self):
+        return self.inst_data.times
+    
     @classmethod
     def update_default_comps(cls,comps):
         if not all(isinstance(x, str) for x in comps):

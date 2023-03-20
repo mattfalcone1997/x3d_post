@@ -1207,14 +1207,14 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
     
     def window(self,method,*args,**kwargs):
         
-        self.mean_data.window(method,*args,**kwargs)
-        self.uu_data.window(method,*args,**kwargs)
+        self.mean_data = self.mean_data.window(method,*args,**kwargs)
+        self.uu_data = self.uu_data.window(method,*args,**kwargs)
         
         if hasattr(self,'uuu_data'):
-            self.uuu_data.window(method,*args,**kwargs)
+            self.uuu_data = self.uuu_data.window(method,*args,**kwargs)
             
         if hasattr(self,'uuuu_data'):
-            self.uuuu_data.window(method,*args,**kwargs)
+            self.uuuu_data = self.uuuu_data.window(method,*args,**kwargs)
             
     def wall_unit_calc(self,PhyTime=None):
         """
