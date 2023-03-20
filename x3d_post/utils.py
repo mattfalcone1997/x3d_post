@@ -25,7 +25,7 @@ def get_iterations(path,statistics=False):
         return sorted(set([int(x[-7:]) for x in files]))
     else:
         stat_path = os.path.join(path,'data')
-        files = os.listdir(stat_path)
+        files = [f for f in os.listdir(stat_path) if 'snapshot' in f]
         return sorted(set([int(x[-12:-5]) for x in files]))
     
 def max_iteration(path,statistics=False):

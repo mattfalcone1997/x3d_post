@@ -1455,6 +1455,7 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
         return fig, ax
     
     def plot_flow_wall_units(self,PhyTimes,fig=None,ax=None,line_kw=None,plot_sublayer=True,**kwargs):
+        PhyTimes =check_list_vals(PhyTimes)
         line_kw = update_line_kw(line_kw)
 
         for time in PhyTimes:
