@@ -832,6 +832,10 @@ class budget_xzt_base(budgetBase,CommonTemporalData):
             
         return cls.phase_average(*avg_list)
     
+    def window(self,method,*args,**kwargs):
+        self.avg_data.window(method,*args,**kwargs)
+        self.budget_data = self.budget_data.window(method,*args,**kwargs)
+        
     @property
     def times(self):
         return self.avg_data.times
