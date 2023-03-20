@@ -1162,6 +1162,16 @@ class x3d_avg_xzt(_AVG_developing,stat_xzt_handler,x3d_avg_xz,CommonTemporalData
             its = get_iterations(path,statistics=True)
         return super()._extract_uumean(path,its,None)
     
+    def _extract_uuumean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)
+        return super()._extract_uuumean(path,its,None)
+    
+    def _extract_uuuumean(self,path,its,it0):
+        if its is None:
+            its = get_iterations(path,statistics=True)
+        return super()._extract_uuuumean(path,its,None)
+    
     def _extract_avg(self,path,its=None):
         if its is not None: its = check_list_vals(its)
         super()._extract_avg(its,path,None)

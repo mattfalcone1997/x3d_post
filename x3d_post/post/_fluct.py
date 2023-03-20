@@ -118,7 +118,7 @@ class _fluct_base(CommonData):
 
             ax[i]=ax1
             ax[i].axes.set_aspect('equal')
-            fig.tight_layout()
+            # fig.tight_layout()
 
             cbar=fig.colorbar(ax1,ax=ax[i].axes)
             cbar.set_label(r"$%s^\prime$"%comp)
