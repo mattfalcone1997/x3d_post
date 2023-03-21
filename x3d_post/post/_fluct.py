@@ -87,9 +87,8 @@ class _fluct_base(CommonData):
         plane, coord = self.fluct_data.CoordDF.check_plane(plane)
 
         if coord == 'y' and wall_units:
-            int_vals = self.avg_data.get_coords_wall_units(coord,axis_vals,0)
             if ref_loc is None: ref_loc = self._default_ref_loc
-            
+            int_vals = self.avg_data.get_coords_wall_units(coord,axis_vals,ref_loc)
             axis_vals = self.avg_data.Wall_Coords(ref_loc).get_true_coords('y',axis_vals)
             title_symbol = get_symbol('wall_initial')
 
