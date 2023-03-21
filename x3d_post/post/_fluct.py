@@ -21,7 +21,7 @@ _inst_z_class = x3d_inst_z
 _inst_xzt_class = x3d_inst_xzt
 
 class _fluct_base(CommonData):
-
+    _default_ref_loc = 0.
     def __init__(self,*args,from_hdf=False,**kwargs):
         if from_hdf:
             self._hdf_extract(*args,**kwargs)
@@ -79,7 +79,7 @@ class _fluct_base(CommonData):
         warn = UserWarning(warn_msg)
         return self.fluct_data.check_times(PhyTime,err_msg,warn_msg)
     
-    def plot_contour(self,comp,axis_vals,plane='xz',PhyTime=None,wall_units=True,fig=None,ax=None,contour_kw=None,**kwargs):
+    def plot_contour(self,comp,axis_vals,plane='xz',PhyTime=None,ref_loc=None,wall_units=True,fig=None,ax=None,contour_kw=None,**kwargs):
         
         axis_vals = check_list_vals(axis_vals)
         PhyTime = self.check_PhyTime(PhyTime)
@@ -87,8 +87,10 @@ class _fluct_base(CommonData):
         plane, coord = self.fluct_data.CoordDF.check_plane(plane)
 
         if coord == 'y' and wall_units:
-            int_vals = self.avg_data.get_coords_wall_units(coord,axis_vals,0)           
-            axis_vals = self.avg_data.Wall_Coords(0).get_true_coords('y',axis_vals)
+            int_vals = self.avg_data.get_coords_wall_units(coord,axis_vals,0)
+            if ref_loc is None: ref_loc = self._default_ref_loc
+            
+            axis_vals = self.avg_data.Wall_Coords(ref_loc).get_true_coords('y',axis_vals)
             title_symbol = get_symbol('wall_initial')
 
         else:
