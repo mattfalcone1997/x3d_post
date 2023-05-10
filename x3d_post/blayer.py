@@ -12,7 +12,7 @@ import x3d_post.post as xp
 from flowpy.plotting import (create_fig_ax_with_squeeze,
                              update_line_kw,
                              update_subplots_kw)
-
+from numbers import Number
 class x3d_avg_z(xp.x3d_avg_z):
     y_limit = None
     def _int_thickness_calc(self,PhyTime):
@@ -35,15 +35,47 @@ class x3d_avg_z(xp.x3d_avg_z):
         
         return disp_thickness, mom_thickness, shape_factor
     
-    def blayer_thickness_calc(self,PhyTime=None,method=99):
+    def blayer_thickness_calc(self,PhyTime=None,method='classic',thresh=99):
         PhyTime= self.check_PhyTime(PhyTime)
-
-        
-        return self._delta99_calc(PhyTime,threshold=method)
-        
+        if isinstance(method,Number):
+            thresh = method
+            method = 'classic'
+            
+        if method == 'classic':
+            return self._delta_classic_calc(PhyTime,threshold=thresh)
+        elif method.lower() == 'griffin':
+            return self._delta_griffin(PhyTime,threshold=thresh)
     
-    def plot_blayer_thickness(self,PhyTime=None,method=99,fig=None,ax=None,line_kw=None,**kwargs):
-        delta = self.blayer_thickness_calc(PhyTime,method=method)
+    def compute_inviscid_u(self,PhyTime=None):
+        p = self.mean_data[PhyTime,'p']
+        v = self.mean_data[PhyTime,'v']
+        u = self.mean_data[PhyTime,'u']
+        
+        p0 = np.amax(p+0.5*u*u)
+
+        return np.sqrt(2*(p0-p) - v*v)
+    
+    def _delta_griffin(self,PhyTime,threshold=99):
+        u = self.mean_data[PhyTime,'u']
+        U_i = self.compute_inviscid_u(PhyTime)
+        U_i_infty = U_i[-1,:]
+        thresh = (1-0.01*threshold)*U_i_infty
+        diff = np.abs(u-U_i)
+        ids = diff < thresh
+        delta99 = np.zeros(u.shape[-1])
+        for i, id in enumerate(ids.T):
+            for j in range(u.shape[0]):
+                if id[j]:
+                    y_l = self.CoordDF['y'][j-1]
+                    y_u = self.CoordDF['y'][j]
+                    ddiff = diff[j,i]-diff[j-1,i]
+                    delta99[i] = y_l + (thresh[i]-diff[j-1,i])*(y_u-y_l)/ddiff
+                    break
+        return delta99
+                
+        
+    def plot_blayer_thickness(self,PhyTime=None,method='classic',thresh=99,fig=None,ax=None,line_kw=None,**kwargs):
+        delta = self.blayer_thickness_calc(PhyTime,method=method,thresh=thresh)
 
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
         x_coords = self.CoordDF['x']
@@ -58,7 +90,7 @@ class x3d_avg_z(xp.x3d_avg_z):
 
         return fig, ax
 
-    def _delta99_calc(self,PhyTime,threshold='99'):
+    def _delta_classic_calc(self,PhyTime,threshold='99'):
         u_mean = self.mean_data[PhyTime,'u']
         y_coords = self.CoordDF['y']
         

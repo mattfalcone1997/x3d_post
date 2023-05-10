@@ -402,12 +402,14 @@ class ReynoldsBudget_base(stathandler_base,ABC):
         comps = ['dudxdudx','dudxdvdx', 'dudxdwdx', 
                 'dvdxdvdx', 'dvdxdwdx', 'dwdxdwdx',
                 'dudydudy', 'dudydvdy', 'dudydwdy', 
-                'dvdydvdy', 'dvdydwdy', 'dwdydwdy']
+                'dvdydvdy', 'dvdydwdy', 'dwdydwdy',
+                'dudzdudz', 'dudzdvdz', 'dudzdwdz', 
+                'dvdzdvdz', 'dvdzdwdz', 'dwdzdwdz']
                 
-        l = self._get_data(path,'dudxdudx_mean',names,it,12,comps=comps)
+        l = self._get_data(path,'dudxdudx_mean',names,it,18,comps=comps)
         
         if it0 is not None:
-            l0 = self._get_data(path,'dudxdudx_mean',names,it0,12)
+            l0 = self._get_data(path,'dudxdudx_mean',names,it0,18)
             
             it_ = self._get_nstat(it)
             it0_ = self._get_nstat(it0)
@@ -542,12 +544,14 @@ class x3d_budget_z(ReynoldsBudget_base,budgetBase,stat_z_handler):
 
         dU1dxdU2dx_comp = 'd'+ comp1 + 'dx' + 'd' + comp2 + 'dx'
         dU1dydU2dy_comp = 'd'+ comp1 + 'dy' + 'd' + comp2 + 'dy'
+        dU1dzdU2dz_comp = 'd'+ comp1 + 'dz' + 'd' + comp2 + 'dz'
         
         du1dxdu2dx = self.dudx2_data[dU1dxdU2dx_comp]
         du1dydu2dy = self.dudx2_data[dU1dydU2dy_comp]
+        du1dzdu2dz= self.dudx2_data[dU1dzdU2dz_comp]
 
         re = self.avg_data.metaDF['re']
-        dissipation = -(2/re)*(du1dxdu2dx + du1dydu2dy)
+        dissipation = -(2/re)*(du1dxdu2dx + du1dydu2dy + du1dzdu2dz)
         return dissipation
 
     def _wallunit_generator(self,x_index,PhyTime,wall_units):
@@ -744,10 +748,10 @@ class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
         u1v = self.uu_data[U1V_comp]
         u2v = self.uu_data[U2V_comp]
 
-        U1x_comp = 'd' + comp1 + 'd' +  'x'
-        U2x_comp = 'd' + comp2 + 'd' + 'x'
-        U1y_comp = 'd' + comp1 + 'd' + 'y'
-        U2y_comp = 'd' + comp2 + 'd' + 'y'
+        U1x_comp = 'd' + comp1 + 'dx'
+        U2x_comp = 'd' + comp2 + 'dx'
+        U1y_comp = 'd' + comp1 + 'dy'
+        U2y_comp = 'd' + comp2 + 'dy'
         
         du1dx = self.dudx_data[U1x_comp]
         du2dx = self.dudx_data[U2x_comp]
@@ -762,12 +766,14 @@ class x3d_budget_xz(ReynoldsBudget_base,budgetBase,stat_xz_handler):
 
         dU1dxdU2dx_comp = 'd'+ comp1 + 'dx' + 'd' + comp2 + 'dx'
         dU1dydU2dy_comp = 'd'+ comp1 + 'dy' + 'd' + comp2 + 'dy'
+        dU1dzdU2dz_comp = 'd'+ comp1 + 'dz' + 'd' + comp2 + 'dz'
         
         du1dxdu2dx = self.dudx2_data[dU1dxdU2dx_comp]
         du1dydu2dy = self.dudx2_data[dU1dydU2dy_comp]
+        du1dzdu2dz = self.dudx2_data[dU1dzdU2dz_comp]
 
         re = self.avg_data.metaDF['re']
-        dissipation = -(2/re)*(du1dxdu2dx + du1dydu2dy)
+        dissipation = -(2/re)*(du1dxdu2dx + du1dydu2dy + du1dzdu2dz)
         return dissipation        
 
     def _wallunit_generator(self,PhyTime,wall_units):

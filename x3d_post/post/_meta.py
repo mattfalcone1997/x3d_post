@@ -171,6 +171,30 @@ class line_probes(Common):
     def from_hdf(cls,fn,key=None):
         return cls(fn,from_hdf=True,key=key)
     
+    def _extract_probe_file(self,probe_path: str,fn:str,n:int)->dict[int,fp.FlowStructND_time]:
+        with open(join(probe_path,fn),'r') as f:
+                probe_info = json.load(f)
+            
+        times = np.loadtxt(join(probe_path,f'probe_times{n}.csv'),usecols=1,
+                            delimiter=',',skiprows=1)
+    
+        nprobes = probe_info['nlineprobes']
+        fn_list = ['lineprobe%.4d-run%d'%(i+1,n) for i in range(nprobes)]
+        
+        probe_data = {}
+        shape = (len(times)*3,self.meta_data.NCL[2])
+        index = list(product(times,['u','v','w']))
+        
+        coorddata = fp.AxisData(self.meta_data.Domain,
+                                    self.meta_data.CoordDF[['z']],
+                                    None)
+        
+        for i, fn in enumerate(fn_list):
+            data = np.fromfile(join(probe_path,fn)).reshape(shape)
+            probe_data[i+1] = fp.FlowStructND_time(coorddata,data,index=index,data_layout=('z'))
+            
+        return probe_data
+
     def _extract_probes(self,path):
         
         probe_path = join(path,'probes')
@@ -178,39 +202,18 @@ class line_probes(Common):
                         if 'probe_info' in fn]
         self.meta_data = self._module._meta_class(path)
         if len(params_files) > 1:
-            raise NotImplementedError("May be done if necessary")
-            param_list = []
-            for fn in params_files:
-                param_list.append(json.loads(join(probe_path,fn)))
 
-            if self._check_probes(param_list):
-                raise ValueError('Run no must be provided if probes are not the same')
-            probe_info = param_list[0]
-            
-            times_list = [join(probe_path,'probes_times%d.csv'%(i+1)) \
-                            for i in range(len(param_list))]
-        else:
-            with open(join(probe_path,params_files[0]),'r') as f:
-                probe_info = json.load(f)
-            
-            times = np.loadtxt(join(probe_path,'probe_times1.csv'),usecols=1,
-                               delimiter=',',skiprows=1)
-            nprobes = probe_info['nlineprobes']
-            fn_list = ['lineprobe%.4d-run1'%(i+1) for i in range(nprobes)]
-            
-            probe_data = {}
-            shape = (len(times)*3,self.meta_data.NCL[2])
-            index = list(product(times,['u','v','w']))
-            
-            coorddata = fp.AxisData(self.meta_data.Domain,
-                                       self.meta_data.CoordDF,
-                                       None)
-            
-            for i, fn in enumerate(fn_list):
-                data = np.fromfile(join(probe_path,fn)).reshape(shape)
-                probe_data[i+1] = fp.FlowStructND_time(coorddata,data,index=index,data_layout=('z'))
-                
+            n = len(params_files)
+            probe_data = self._extract_probe_file(probe_path,params_files[-1],n)
+            for i, fn in enumerate(params_files[:-1][::-1]):
+                probe = self._extract_probe_file(probe_path,fn,n-i-1)
+                for k, v in probe.items():
+                    times = [time for time in v.times if time not in probe_data[k].times]
+                    probe_data[k].concat(v[times,v.inner_index])
+
             self.probe_data = probe_data
+        else:
+            self.probe_data = self._extract_probe_file(probe_path,params_files[0],1)
             
             
     def _check_probes(self,probe_params: list[dict]):

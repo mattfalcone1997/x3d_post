@@ -85,12 +85,20 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
     def _get_avg_data(self):
         return self._module._avg_xz_class
     
-    def _get_spectra_data(self,it,path,it0=None):
+    def _get_spectra_data(self,it,path,it0=None,comps=None):
         stat_folder = os.path.join(path,'statistics')
         files = [f for f in os.listdir(stat_folder) if 'spectra_2d' in f]
         
-        comps = [l.replace('spectra_2d_','').replace('.dat',' ').split()[0] for l in files]
-        comps = list(set(comps))
+        comps_avail = list(set([l.replace('spectra_2d','')\
+                            .replace('.dat',' ').split()[0] \
+                                for l in files]))
+        if comps is None:
+            comps = comps_avail
+        else:
+            comps = [comp for comp in comps if comp in comps_avail]
+            if len(comps) < 1:
+                raise ValueError("Invalid comps given to spectra")
+
 
         shape = (self.NCL[2]//2+1,self.NCL[1],self.NCL[0])
         lshape = (len(comps),self.NCL[2]//2+1,self.NCL[1],self.NCL[0])
@@ -208,10 +216,10 @@ class x3d_spectra_xz(stat_xz_handler,spectra_base):
         return comps
                 
                 
-    def _spectra_extract(self,it,path,it0=None):
+    def _spectra_extract(self,it,path,it0=None,comps=None):
         self.avg_data = self._get_avg_data(it,path,it0)
         
-        self.spectra_data = self._get_spectra_data(it,path,it0)
+        self.spectra_data = self._get_spectra_data(it,path,it0,comps=comps)
         
 
     def get_autocorrelation(self,comps=None,time=None):
@@ -719,12 +727,21 @@ class x3d_spectra_z(stat_z_handler,spectra_base):
     def _get_avg_data(self):
         return self._module._avg_z_class
     
-    def _get_spectra_data(self,it,path,it0=None):
+    def _get_spectra_data(self,it,path,it0=None,comps=None):
         stat_folder = os.path.join(path,'statistics')
         files = [f for f in os.listdir(stat_folder) if 'spectra_z_z' in f]
         
-        comps = [l.replace('spectra_z_z_','').replace('.dat',' ').split()[0] for l in files]
-        comps = list(set(comps))
+        
+        comps_avail = list(set([l.replace('spectra_z_z_','')\
+                            .replace('.dat',' ').split()[0] \
+                                for l in files]))
+        if comps is None:
+            comps = comps_avail
+        else:
+            comps = [comp for comp in comps if comp in comps_avail]
+
+        if len(comps) < 1:
+            raise ValueError("Invalid comps given to spectra")
 
         shape = (self.NCL[2]//2+1,self.NCL[1],self.NCL[0])
         lshape = (len(comps),self.NCL[2]//2+1,self.NCL[1],self.NCL[0])
@@ -833,10 +850,10 @@ class x3d_spectra_z(stat_z_handler,spectra_base):
                 
         return comps
 
-    def _spectra_extract(self,it,path,it0=None):
+    def _spectra_extract(self,it,path,it0=None,comps=None):
         self.avg_data = self._get_avg_data(it,path,it0)
         
-        self.spectra_data = self._get_spectra_data(it,path,it0)
+        self.spectra_data = self._get_spectra_data(it,path,it0,comps=comps)
         
                 
     def get_autocorrelation(self,comps=None,time=None):
@@ -903,6 +920,27 @@ class x3d_spectra_z(stat_z_handler,spectra_base):
         ax.set_ylabel(r"$y$")
         ax.set_xscale('log')
 
+        return fig, qm
+    
+    def plot_corr_z_contour(self,comp,x_val,norm=True,show_positive=False,contour_kw=None,time=None,fig=None,ax=None,**kwargs):
+        kwargs = update_subplots_kw(kwargs)
+        fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
+        autocorr = self.get_autocorrelation(comps=[comp],time=time)
+
+        contour_kw = update_contour_kw(contour_kw)
+        norm_transform = (lambda x: x) if not norm else lambda x: x/np.amax(x)
+        if not show_positive:
+            transform = lambda x: np.ma.array(norm_transform(x),mask=x>0)
+        else:
+            transform = norm_transform
+
+        fig, qm = autocorr.slice[:,:,x_val].plot_contour(comp,
+                                                      transform_cdata=transform,
+                                                      fig=fig,ax=ax,
+                                                      rotate=True,
+                                                      contour_kw=contour_kw)
+        ax.set_xlabel(r"$\Delta z$")
+        ax.set_ylabel(r"$y$")
         return fig, qm
     
     def plot_correlation_z(self,comp,coord,x_val,y_wall_units=True,norm=True,line_kw=None,time=None,fig=None,ax=None,**kwargs):
@@ -1062,7 +1100,7 @@ class x3d_autocorr_x(CommonData,stathandler_base):
                                                     time=time,
                                                     transform_ydata=transform,
                                                     fig=fig,ax=ax,
-                                                    label=r"$R_{uu}$",
+                                                    label=r"$x=%.3g$"%x0,
                                                     line_kw=line_kw)
         
         ax.set_xlabel(r"$\Delta x$")
