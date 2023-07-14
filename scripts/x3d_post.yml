@@ -18,6 +18,7 @@ dependencies:
   - seaborn
   - pip
   - cython
+  - numba
   - sphinx
   - sphinx_rtd_theme
   - scikit-image

@@ -63,6 +63,8 @@ class _quadrant_base(CommonData,stathandler_base):
         self._avg_data.save_hdf(fn,'a',key+'/avg_data')
         
         self.quad_data.to_hdf(fn,'a',key=key+'/quad_data')
+        if self.ind_data is not None:
+            self.ind_data.to_hdf(fn,'a',key=key+'/ind_data')
         
         return hdf_obj
     
@@ -110,13 +112,43 @@ class _quadrant_base(CommonData,stathandler_base):
                                      index=index)
         return uvq
 
+    def _extract_Iq(self,path,it,it0):
+        with open(os.path.join(path,'statistics.json'),'r') as f:
+            stat_params = json.load(f)
+        h_quads = stat_params['uv_quadrant']['h_quads']
+
+        if not os.path.isfile(os.path.join(path,'statistics','I_quadrant_mean.dat%7.7d'%it)):
+            return None
+        
+        l = self._get_data(path,'I_quadrant_mean',None,it,len(h_quads)*4)
+
+        if it0 is not None:
+            l0 = self._get_data(path,'I_quadrant_mean',None,it0,len(h_quads)*4)
+            it_ = self._get_nstat(it)
+            it0_ = self._get_nstat(it0)
+
+            l = (it_*l - it0_*l0) / (it_ - it0_)
+            
+        geom = fp.GeomHandler(self.metaDF['itype'])
+        coorddata = fp.AxisData(geom, self.CoordDF, coord_nd=None)
+
+        comps = [self._comp_calc(x,y) for x, y in product(h_quads,range(1,5))]
+        index = self._get_index(it,comps)
+        
+        Iq = self._flowstruct_class(coorddata,
+                                     l,
+                                     index=index)
+        return Iq    
+
 class x3d_quadrant_z(_quadrant_base,stat_z_handler):
     def _quad_extract(self,it,path,it0=None):
         self._meta_data = self._module._meta_class(path)
         
         self._avg_data = self._module._avg_z_class(it,path,it0)
         self.quad_data = self._extract_uvq(path,it,it0)
-        
+        self.ind_data = self._extract_Iq(path,it,it0)
+
+
     def _hdf_extract(self,fn,key):
         key = self._get_hdf_key(key)
         
@@ -127,6 +159,10 @@ class x3d_quadrant_z(_quadrant_base,stat_z_handler):
         self._avg_data = self._module._avg_z_class.from_hdf(fn,key=key+'/avg_data')
         
         self.quad_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/quad_data')
+        if key+'/ind_data' in hdf_obj.keys():
+            self.ind_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/ind_data')
+        else:
+            self.ind_data = None
         
     def plot_line(self,h_list,prop_dir,coord,x_val=0,y_mode_wall=True,Quadrants=None,norm=False,fig=None,ax=None,line_kw=None,**kwargs):
         
@@ -173,12 +209,53 @@ class x3d_quadrant_z(_quadrant_base,stat_z_handler):
         
         return fig, ax
     
+    def plot_ind_line(self,h_list,prop_dir,coord,x_val=0,y_mode_wall=True,Quadrants=None,fig=None,ax=None,line_kw=None,**kwargs):
+        if self.ind_data is None:
+            raise RuntimeError("Indicator function not saved")
+        if prop_dir == 'x':
+            if y_mode_wall:
+                CoordDF = self._avg_data.Wall_Coords(x_val)
+                y = CoordDF.index_calc('y',coord)
+            else:
+                y = self.CoordDF.index_calc('y',coord)
+                
+            val = self.CoordDF['y'][y]
+        else:
+            val = self.CoordDF['x'][self.CoordDF.index_calc('x',coord)]
+                    
+        Quadrants = self._check_quadrant(Quadrants)
+        quad_num = len(Quadrants)                    
+
+        kwargs = update_subplots_kw(kwargs,figsize=[5,12])
+        fig, ax, _ = create_fig_ax_without_squeeze(quad_num,fig=fig,ax=ax,**kwargs)
+        
+        symbol = 'x' if prop_dir == 'y' else 'wall' if y_mode_wall else 'half-channel'
+        unit = get_symbol(symbol)
+        
+        for i, quad  in enumerate(Quadrants):
+            for h in h_list:
+                comp = self._comp_calc(h,quad)
+                fig, ax[i] = self.ind_data.plot_line(comp, prop_dir, val,
+                                                    time = None,
+                                                    labels=[f'$h = {h}$'],
+                                                    channel_half = True,
+                                                    fig= fig, ax= ax[i],
+                                                    line_kw=line_kw)
+
+            ax[i].set_ylabel(r"$Q%d$"%quad)
+        ax[0].set_title(r"$%s=%.5g$"%(unit,coord),loc='left')
+        x_label = self.Domain.create_label(f"${prop_dir}$")
+        ax[-1].set_xlabel(x_label)
+        
+        return fig, ax    
+    
 class x3d_quadrant_xz(_quadrant_base,stat_xz_handler):
     def _quad_extract(self,it,path,it0=None):
         self._meta_data = self._module._meta_class(path)
         
         self._avg_data = self._module._avg_xz_class(it,path,it0)
         self.quad_data = self._extract_uvq(path,it,it0)
+        self.ind_data = self._extract_Iq(path,it,it0)
 
     def _hdf_extract(self,fn,key):
         key = self._get_hdf_key(key)
@@ -190,6 +267,10 @@ class x3d_quadrant_xz(_quadrant_base,stat_xz_handler):
         self._avg_data = self._module._avg_xz_class.from_hdf(fn,key=key+'/avg_data')
         
         self.quad_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/quad_data')
+        if key+'/ind_data' in hdf_obj.keys():
+            self.ind_data = fp.FlowStruct1D.from_hdf(fn,key=key+'/ind_data')
+        else:
+            self.ind_data = None
 
     def plot_line(self,h_list,Quadrants=None,norm=False,fig=None,ax=None,line_kw=None,**kwargs):
         if norm:
@@ -219,6 +300,31 @@ class x3d_quadrant_xz(_quadrant_base,stat_xz_handler):
         ax[-1].set_xlabel(x_label)
 
         return fig, ax
+    
+    def plot_ind_line(self,h_list,Quadrants=None,fig=None,ax=None,line_kw=None,**kwargs):
+        if self.ind_data is None:
+            raise RuntimeError("Indicator function not saved")
+        Quadrants = self._check_quadrant(Quadrants)
+        quad_num = len(Quadrants)
+
+        kwargs = update_subplots_kw(kwargs,figsize=[5,12])
+        fig, ax, _ = create_fig_ax_without_squeeze(quad_num,fig=fig,ax=ax,**kwargs)
+            
+        for i, quad  in enumerate(Quadrants):
+            for h in h_list:
+                comp = self._comp_calc(h,quad)
+                fig, ax[i] = self.ind_data.plot_line(comp,
+                                                    time = None,
+                                                    label=f'$h = {h}$',
+                                                    channel_half = True,
+                                                    fig= fig, ax= ax[i],
+                                                    line_kw=line_kw)
+            ax[i].set_ylabel(r"$Q%d$"%quad)
+
+        x_label = self.Domain.create_label(f"$y$")
+        ax[-1].set_xlabel(x_label)
+
+        return fig, ax
             
 class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
     def _quad_extract(self,path,its=None):
@@ -229,7 +335,8 @@ class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
         
         self._avg_data = self._module._avg_xzt_class(path,its=its)
         self.quad_data = self._extract_uvq(path,its,None)
-    
+        self.ind_data = self._extract_Iq(path,its,None)
+
     @property
     def times(self):
         return self.quad_data.times
@@ -244,7 +351,11 @@ class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
         self._avg_data = self._module._avg_xzt_class.from_hdf(fn,key=key+'/avg_data')
         
         self.quad_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/quad_data')
-        
+        if key+'/ind_data' in hdf_obj.keys():
+            self.ind_data = fp.FlowStruct1D_time.from_hdf(fn,key=key+'/ind_data')
+        else:
+            self.ind_data = None
+
     def plot_line(self, h_list,prop_dir ,coord, y_mode_wall=True, Quadrants=None, norm=False, fig=None, ax=None, line_kw=None, **kwargs):
         Quadrants = self._check_quadrant(Quadrants)
 
@@ -292,6 +403,60 @@ class x3d_quadrant_xzt(x3d_quadrant_xz,CommonTemporalData,stat_xzt_handler):
                 for h in h_list:
                     comp = self._comp_calc(h,quad)
                     fig, ax[i] = norm_Quadrant.plot_line(comp,
+                                                        time = coord,
+                                                        label=f'$h = {h}$',
+                                                        channel_half = True,
+                                                        fig= fig, ax= ax[i],
+                                                        line_kw=line_kw)
+                    
+            x_label = self.Domain.create_label(f"$y$")
+            ax[-1].set_xlabel(x_label)
+            title = self.Domain.create_label(r"$t=%.3g$"%coord)
+            ax[0].set_title(title,loc='left')
+                
+            ax[i].set_ylabel(r"$Q%d$"%quad)
+                
+        return fig, ax
+    
+    def plot_ind_line(self, h_list,prop_dir ,coord, y_mode_wall=True, Quadrants=None, fig=None, ax=None, line_kw=None, **kwargs):
+        if self.ind_data is None:
+            raise RuntimeError("Indicator function not saved")
+        Quadrants = self._check_quadrant(Quadrants)
+            
+        quad_num = len(Quadrants)
+
+        kwargs = update_subplots_kw(kwargs,figsize=[12,5])
+        fig, ax, _ = create_fig_ax_without_squeeze(quad_num,1,fig=fig,ax=ax,**kwargs)
+        ax = ax.reshape(quad_num)
+        if prop_dir == 't':
+            symbol = 'x' if prop_dir == 'y' else 'wall' if y_mode_wall else 'half-channel'
+            unit = get_symbol(symbol)
+            if y_mode_wall:
+                CoordDF = self._avg_data.Wall_Coords(coord)
+                y = CoordDF.index_calc('y',coord)
+            else:
+                y = self.CoordDF.index_calc('y',coord)
+                
+            val = self.CoordDF['y'][y]
+            
+            for i, quad  in enumerate(Quadrants):
+                for h in h_list:
+                    comp = self._comp_calc(h,quad)
+                    fig, ax[i] = self.ind_data.plot_line_time(comp, val,
+                                                            labels=[f'$h = {h}$'],
+                                                            channel_half = True,
+                                                            fig= fig, ax= ax[i],
+                                                            line_kw=line_kw)
+                ax[i].set_ylabel(r"$Q%d$"%quad)
+            ax[0].set_title(r"$%s=%.3g$"%(unit,coord),loc='left')
+            x_label = self.Domain.create_label(f"$t$")
+            ax[-1].set_xlabel(x_label)
+            
+        else:
+            for i, quad  in enumerate(Quadrants):
+                for h in h_list:
+                    comp = self._comp_calc(h,quad)
+                    fig, ax[i] = self.ind_data.plot_line(comp,
                                                         time = coord,
                                                         label=f'$h = {h}$',
                                                         channel_half = True,

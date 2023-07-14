@@ -177,19 +177,19 @@ class CommonTemporalData(CommonData):
         return fstructs
     
     @classmethod
-    def _get_its_phase(cls,paths,times=None) -> list[int]:
+    def _get_its_phase(cls,paths,its=None) -> list[int]:
         it_shifts = [cls._get_its_shift(path) for path in paths]
 
-        if times is None:
+        if its is None:
             
-            times_list = [ np.array(get_iterations(path,statistics=True)) + shift\
+            its_list = [ np.array(get_iterations(path,statistics=True)) + shift\
                         for shift, path in zip(it_shifts,paths)]
             
-            times_shifted = cls._get_intersect(times_list)
+            its_shifted = sorted(cls._get_intersect(its_list))
         else:
-            times_shifted = times    
-                
-        return [times_shifted - shift for shift in it_shifts]
+            its_shifted = sorted(its)
+        print(its_shifted)
+        return [np.array(its_shifted) - shift for shift in it_shifts]
 
     @classmethod
     def _get_intersect(cls,its_list):

@@ -481,7 +481,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         kwargs = update_subplots_kw(kwargs,figsize=[7,5])
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
 
-        x_coords = self.CoordDF['x']
+        x_coords = self.mean_data.CoordDF['x']
         line_kw = update_line_kw(line_kw,label = r"$H$")
         ax.cplot(x_coords,shape_factor,**line_kw)
 
@@ -500,7 +500,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         kwargs = update_subplots_kw(kwargs,figsize=[7,5])
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
         
-        x_coords = self.CoordDF['x']
+        x_coords = self.mean_data.CoordDF['x']
 
         line_kw = update_line_kw(line_kw,label=r"$\theta$")
         ax.cplot(x_coords,theta,**line_kw)
@@ -520,7 +520,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         kwargs = update_subplots_kw(kwargs,figsize=[7,5])
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)
 
-        x_coords = self.CoordDF['x']
+        x_coords = self.mean_data.CoordDF['x']
 
         line_kw = update_line_kw(line_kw,label=r"$\delta^*$")
         ax.cplot(x_coords,delta,**line_kw)
@@ -705,7 +705,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
         kwargs = update_subplots_kw(kwargs,figsize=[7,5])
         fig, ax =create_fig_ax_with_squeeze(fig,ax,**kwargs)
 
-        x_coords = self.CoordDF['x']
+        x_coords = self.mean_data.CoordDF['x']
         line_kw = update_line_kw(line_kw,label=r"$U_{b}$")
 
         ax.cplot(x_coords,bulk_velo,**line_kw)
@@ -720,7 +720,7 @@ class x3d_avg_z(_AVG_developing,stat_z_handler):
 
         PhyTime = self.check_PhyTime(PhyTime)
         skin_friction = self._Cf_calc(PhyTime)
-        x_coords = self.CoordDF['x']
+        x_coords = self.mean_data.CoordDF['x']
 
         kwargs = update_subplots_kw(kwargs,figsize=[7,5])
         fig, ax = create_fig_ax_with_squeeze(fig,ax,**kwargs)

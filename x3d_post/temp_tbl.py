@@ -33,6 +33,7 @@ class temp_tbl_base(temp_accel_base):
         index = np.argmin(np.abs(self.times-time_ref))
         return -self.times[index]
     
+    @classmethod
     def _get_its_shift(cls,path) -> int:
         meta_data = cls._module._meta_class(path)
         if not hasattr(meta_data,'_ub'):

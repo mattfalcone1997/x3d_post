@@ -16,7 +16,7 @@ import warnings
 import matplotlib as mpl          
 import logging
 from ._average import x3d_avg_z, x3d_avg_xz, x3d_avg_xzt
-
+from numba import njit, prange
 _avg_z_class = x3d_avg_z
 _avg_xz_class =x3d_avg_xz
 _avg_xzt_class = x3d_avg_xzt
@@ -407,12 +407,9 @@ class _Inst_base(CommonData,inst_reader,ABC):
             S2_Omega2_eigvals, e_vecs = cnpy.linalg.eigh(S2_Omega2)
             del e_vecs; del S2_Omega2
             lambda2 = cnpy.sort(S2_Omega2_eigvals,axis=3)[:,:,:,1].get()
+            del S2_Omega2_eigvals
         else:
-            S2_Omega2_eigvals, e_vecs = np.linalg.eigh(S2_Omega2)
-            del e_vecs; del S2_Omega2
-            lambda2 = np.sort(S2_Omega2_eigvals,axis=3)[:,:,:,1]
-        
-        del S2_Omega2_eigvals        
+            lambda2 = _compute_eig2(S2_Omega2)        
         
         return fp.FlowStruct3D(self.inst_data._coorddata,{(PhyTime,'lambda_2'):lambda2})
 
@@ -640,6 +637,44 @@ class _Inst_base(CommonData,inst_reader,ABC):
 
         self.inst_data.concat(inst_data.inst_data)
         return self
+    
+@njit(parallel=True)
+def _compute_eig2(array: np.ndarray):
+    eig2 = np.zeros(array.shape[:3])
+    for i in prange(array.shape[0]):
+        for j in prange(array.shape[1]):
+            for k in prange(array.shape[2]):
+                p1 = array[i,j,k,0,0]*array[i,j,k,0,0] \
+                    + array[i,j,k,1,1]*array[i,j,k,1,1] \
+                    + array[i,j,k,2,2]*array[i,j,k,2,2] 
+    
+                p1 = array[i,j,k,0,1]*array[i,j,k,0,1] \
+                    + array[i,j,k,0,2]*array[i,j,k,0,2] \
+                    + array[i,j,k,1,2]*array[i,j,k,1,2] 
+
+                q = (array[i,j,k,0,0] + array[i,j,k,1,1] + array[i,j,k,2,2])/3.
+                
+                p2 = (array[i,j,k,0,0]-q)*(array[i,j,k,0,0]-q) \
+                    + (array[i,j,k,1,1]-q)*(array[i,j,k,1,1]-q) \
+                    + (array[i,j,k,2,2]-q)*(array[i,j,k,2,2]-q)
+    
+                p = np.sqrt((p2 + 2.*p1)/6.)
+
+                u_mat = array[i,j,k,:,:]/p
+
+                u_mat[0,0] -= q/p
+                u_mat[1,1] -= q/p
+                u_mat[2,2] -= q/p
+
+                det_b = u_mat[0,0]*(u_mat[1,1]*u_mat[2,2] \
+                                            -u_mat[1,2]*u_mat[2,1]) \
+                        - u_mat[0,1]*(u_mat[1,0]*u_mat[2,2] \
+                                            -u_mat[1,2]*u_mat[2,0]) \
+                        + u_mat[0,2]*(u_mat[1,0]*u_mat[2,1] \
+                                            -u_mat[1,1]*u_mat[2,0])
+                phi= np.arccos(0.5*det_b)/3 + 4.*np.pi/3.
+                eig2[i,j,k] = q + 2.*p*np.cos(phi)
+    return eig2
 
 class x3d_inst_z(_Inst_base):
     

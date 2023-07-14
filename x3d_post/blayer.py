@@ -126,7 +126,10 @@ class x3d_avg_z(xp.x3d_avg_z):
         return self.mean_data[PhyTime,'u'][-1,:].copy()
 
     U_infty_calc = xp.x3d_avg_z.bulk_velo_calc
-    plot_U_infty = xp.x3d_avg_z.plot_bulk_velocity
+    def plot_U_infty(self,*args,**kwargs):
+        fig, ax = super().plot_bulk_velocity(*args,**kwargs)
+        ax.set_ylabel(r"$U_\infty$")
+        return fig, ax
     
     def _y_plus_calc(self,PhyTime):
 
@@ -232,4 +235,7 @@ class x3d_spectra_z(xp.x3d_spectra_z):
     pass
 
 class x3d_autocorr_x(xp.x3d_autocorr_x):
+    pass
+
+class line_probes(xp.line_probes):
     pass

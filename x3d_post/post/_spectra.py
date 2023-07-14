@@ -8,6 +8,7 @@ from ._data_handlers import (stathandler_base,
                              stat_z_handler)
 
 from ..utils import get_iterations
+import matplotlib as mpl
 import os
 import numpy as np
 import flowpy as fp
@@ -922,23 +923,57 @@ class x3d_spectra_z(stat_z_handler,spectra_base):
 
         return fig, qm
     
-    def plot_corr_z_contour(self,comp,x_val,norm=True,show_positive=False,contour_kw=None,time=None,fig=None,ax=None,**kwargs):
+    def plot_spectra_z_line(self,comp,x_val,y_val,wavelength=False,premultiply=True,line_kw=None,time=None,fig=None,ax=None,**kwargs):
+        kwargs = update_subplots_kw(kwargs)
+        fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
+
+        line_kw = update_line_kw(line_kw)
+
+        k_z = self.spectra_data.CoordDF['k_z']
+        x_transform = (lambda x: 2*np.pi/(x+x[1])) if wavelength else None
+        y_transform = (lambda x: np.real(x*(k_z))) if premultiply else np.real
+
+        fig, ax = self.spectra_data.slice[:,y_val,x_val].plot_line(comp,
+                                                                time=time,
+                                                                transform_xdata=x_transform,
+                                                                transform_ydata=y_transform,
+                                                                line_kw=line_kw,
+                                                                fig=fig,
+                                                                ax=ax)
+        
+
+        if wavelength:
+            ax.set_xlabel(r"$\lambda_z$")
+        else:
+            ax.set_xlabel(r"$\kappa_z$")
+        
+        ax.set_xscale('log')
+
+        return fig, ax
+    
+    def plot_corr_z_contour(self,comp,x_val,norm=True,contour_kw=None,show_positive=False,time=None,fig=None,ax=None,**kwargs):
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig,ax=ax,**kwargs)
         autocorr = self.get_autocorrelation(comps=[comp],time=time)
 
         contour_kw = update_contour_kw(contour_kw)
+        
         norm_transform = (lambda x: x) if not norm else lambda x: x/np.amax(x)
+        
         if not show_positive:
-            transform = lambda x: np.ma.array(norm_transform(x),mask=x>0)
-        else:
-            transform = norm_transform
+            vmin = np.amin(norm_transform(autocorr.slice[:,:,x_val][comp]))
+            if 'levels' in contour_kw:
+                if isinstance(contour_kw['levels'],int):
+                    contour_kw['levels'] = np.linspace(vmin,0.,contour_kw['levels'])
 
         fig, qm = autocorr.slice[:,:,x_val].plot_contour(comp,
-                                                      transform_cdata=transform,
+                                                      transform_cdata=norm_transform,
                                                       fig=fig,ax=ax,
                                                       rotate=True,
                                                       contour_kw=contour_kw)
+        if not show_positive:   
+            qm.cmap.set_over('w')
+
         ax.set_xlabel(r"$\Delta z$")
         ax.set_ylabel(r"$y$")
         return fig, qm

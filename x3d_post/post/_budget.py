@@ -860,7 +860,7 @@ class budget_xzt_base(budgetBase,CommonTemporalData):
 
         self._del_stat_data()
     
-class x3d_budget_xzt(budget_xzt_base,stat_xzt_handler,x3d_budget_xz):
+class x3d_budget_xzt(stat_xzt_handler,budget_xzt_base,x3d_budget_xz):
     _flowstruct_class = fp.FlowStruct1D_time
     def _budget_extract(self,comp):
         

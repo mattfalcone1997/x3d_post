@@ -130,7 +130,7 @@ class stathandler_base(ABC):
         
                 
         if comps is not None:
-            if isinstance(it,list):
+            if hasattr(it,'__iter__'):
                 fpath = self._get_stat_file_z(path,name,it[0])
             else:
                 fpath = self._get_stat_file_z(path,name,it)

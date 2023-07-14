@@ -52,8 +52,9 @@ class meta_x3d(Common):
         
         if 'window' in params:
             fn = params['window']['file']
-            data = np.loadtxt(os.path.join(path,fn)).squeeze()
-            self.metaDF['outputs'] = data
+            if os.path.isfile(fn):
+                data = np.loadtxt(os.path.join(path,fn)).squeeze()
+                self.metaDF['outputs'] = data
             
         if 'autocorrelation' in params:
             shape = params['autocorrelation']['shape']
@@ -198,9 +199,11 @@ class line_probes(Common):
     def _extract_probes(self,path):
         
         probe_path = join(path,'probes')
-        params_files = [fn for fn in os.listdir(probe_path)\
-                        if 'probe_info' in fn]
+        params_files = sorted([fn for fn in os.listdir(probe_path)\
+                        if 'probe_info' in fn])
+        
         self.meta_data = self._module._meta_class(path)
+        print(path,params_files)
         if len(params_files) > 1:
 
             n = len(params_files)
@@ -208,9 +211,10 @@ class line_probes(Common):
             for i, fn in enumerate(params_files[:-1][::-1]):
                 probe = self._extract_probe_file(probe_path,fn,n-i-1)
                 for k, v in probe.items():
+                    print(k,probe_data[k].times[0],probe_data[k].times[-1])
                     times = [time for time in v.times if time not in probe_data[k].times]
                     probe_data[k].concat(v[times,v.inner_index])
-
+                print(probe_data[i+1].times[0],probe_data[i+1].times[-1])
             self.probe_data = probe_data
         else:
             self.probe_data = self._extract_probe_file(probe_path,params_files[0],1)
