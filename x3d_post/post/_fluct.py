@@ -9,6 +9,7 @@ from flowpy.plotting import (update_subplots_kw,
 from ..style import get_symbol
 import matplotlib as mpl
 from ._meta import meta_x3d
+from numba import njit, prange
 _meta_class=meta_x3d
 
 from ._average import x3d_avg_z, x3d_avg_xzt
@@ -205,8 +206,11 @@ class _fluct_base(CommonData):
         kwargs = update_subplots_kw(kwargs,figsize=figsize)
         fig, ax, axes_output = create_fig_ax_without_squeeze(len(axis_vals),fig=fig,ax=ax,**kwargs)
 
+        p1, p2 = plane
+        c1 = chr(ord(p1)-ord('x') + ord('u'))
+        c2 = chr(ord(p2)-ord('x') + ord('u'))
         for i, val in enumerate(int_vals):
-            fig, ax[i] = self.fluct_data.plot_vector(plane,val,time=PhyTime,spacing=spacing,scaling=scaling,
+            fig, ax[i] = self.fluct_data.plot_vector((c1,c2),plane,val,time=PhyTime,spacing=spacing,scaling=scaling,
                                                     fig=fig,ax=ax[i],quiver_kw=quiver_kw)
 
             xlabel = self.Domain.create_label(r"$%s$"%plane[0])
@@ -314,10 +318,19 @@ class x3d_fluct_z(_fluct_base):
         for j, (time, comp) in enumerate(inst_data.inst_data.index):
             avg_values = avg_data.mean_data[avg_time[0],comp]
             inst_values = inst_data.inst_data[time,comp]
-            fluct[j] = inst_values - avg_values[avg_index[0]][avg_index[1]]
+            self._parallel_fluct(inst_values,
+                                 avg_values[avg_index[0]][avg_index[1]],
+                                 fluct[j])
+
         return fp.FlowStruct3D(inst_data.inst_data._coorddata,
                                fluct,
                                index=inst_data.inst_data.index)
+    
+    @staticmethod
+    @njit(parallel=True, cache=True)
+    def _parallel_fluct(inst: np.ndarray, avg: np.ndarray, fluct: np.ndarray):
+        for i in prange(inst.shape[0]):
+            fluct[i,:,:] = inst[i,:,:] - avg
         
     def _get_avg_slice(self,inst_struct: fp.FlowStruct3D, mean_struct: fp.FlowStruct2D):
         coords_inst = inst_struct.CoordDF

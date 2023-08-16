@@ -36,6 +36,8 @@ from ._fluct import (x3d_fluct_z,
                      x3d_fluct_xzt)
 from ._data_handlers import (read_stat_z_file,
                              read_parameters)
+
+from ._common import CommonData, CommonTemporalData
 _meta_class = meta_x3d
 _avg_z_class = x3d_avg_z
 _avg_xz_class = x3d_avg_xz

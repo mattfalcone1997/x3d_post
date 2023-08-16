@@ -159,7 +159,8 @@ class x3d_quadrant_z(_quadrant_base,stat_z_handler):
         self._avg_data = self._module._avg_z_class.from_hdf(fn,key=key+'/avg_data')
         
         self.quad_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/quad_data')
-        if key+'/ind_data' in hdf_obj.keys():
+
+        if 'ind_data' in hdf_obj.keys():
             self.ind_data = fp.FlowStruct2D.from_hdf(fn,key=key+'/ind_data')
         else:
             self.ind_data = None

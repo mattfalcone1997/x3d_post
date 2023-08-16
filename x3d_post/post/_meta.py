@@ -172,19 +172,29 @@ class line_probes(Common):
     def from_hdf(cls,fn,key=None):
         return cls(fn,from_hdf=True,key=key)
     
-    def _extract_probe_file(self,probe_path: str,fn:str,n:int)->dict[int,fp.FlowStructND_time]:
+    def _extract_probe_file(self, probe_path: str, fn:str, n:int, its_req: list)->dict[int,fp.FlowStructND_time]:
+        if len(its_req) == 0:
+            return None
+        
         with open(join(probe_path,fn),'r') as f:
                 probe_info = json.load(f)
             
-        times = np.loadtxt(join(probe_path,f'probe_times{n}.csv'),usecols=1,
-                            delimiter=',',skiprows=1)
-    
+        its = np.loadtxt(join(probe_path,f'probe_times{n}.csv'),
+                            delimiter=',',skiprows=1,dtype='i4',usecols=0)
+        times = np.loadtxt(join(probe_path,f'probe_times{n}.csv'),
+                            delimiter=',',skiprows=1,dtype='f8',usecols=1)
+
+        ind = [it in its_req for it in its]
+        if not any(ind):
+            raise RuntimeError("Their is an internal issue here")
+
         nprobes = probe_info['nlineprobes']
         fn_list = ['lineprobe%.4d-run%d'%(i+1,n) for i in range(nprobes)]
         
         probe_data = {}
-        shape = (len(times)*3,self.meta_data.NCL[2])
-        index = list(product(times,['u','v','w']))
+        shape = (len(times),3,self.meta_data.NCL[2])
+        index = list(product(times[ind],['u','v','w']))
+        shape1 = (len(times[ind])*3,self.meta_data.NCL[2])
         
         coorddata = fp.AxisData(self.meta_data.Domain,
                                     self.meta_data.CoordDF[['z']],
@@ -192,7 +202,7 @@ class line_probes(Common):
         
         for i, fn in enumerate(fn_list):
             data = np.fromfile(join(probe_path,fn)).reshape(shape)
-            probe_data[i+1] = fp.FlowStructND_time(coorddata,data,index=index,data_layout=('z'))
+            probe_data[i+1] = fp.FlowStructND_time(coorddata,data[ind,:,:].reshape((shape1)),index=index,data_layout=('z'))
             
         return probe_data
 
@@ -203,44 +213,68 @@ class line_probes(Common):
                         if 'probe_info' in fn])
         
         self.meta_data = self._module._meta_class(path)
-        print(path,params_files)
-        if len(params_files) > 1:
+        probe_params = [json.loads(open(os.path.join(probe_path,f),'r',encoding='ascii').read())\
+                         for f in params_files]
+        self._check_probes(probe_params)
 
-            n = len(params_files)
-            probe_data = self._extract_probe_file(probe_path,params_files[-1],n)
-            for i, fn in enumerate(params_files[:-1][::-1]):
-                probe = self._extract_probe_file(probe_path,fn,n-i-1)
-                for k, v in probe.items():
-                    print(k,probe_data[k].times[0],probe_data[k].times[-1])
-                    times = [time for time in v.times if time not in probe_data[k].times]
-                    probe_data[k].concat(v[times,v.inner_index])
-                print(probe_data[i+1].times[0],probe_data[i+1].times[-1])
+        if len(params_files) > 1:
+            
+            its_list = self._get_probe_times(probe_path)
+            
+            probe_datas = [self._extract_probe_file(probe_path,fn,i+1,its_list[i])\
+                          for i, fn in enumerate(params_files) ]
+            while None in probe_datas:
+                probe_datas.remove(None)
+
+            probe_data = probe_datas[0]
+            for probe in probe_datas[1:]:
+                for i in range(len(probe_data)):
+                    probe_data[i+1].concat(probe[i+1])
+
             self.probe_data = probe_data
         else:
             self.probe_data = self._extract_probe_file(probe_path,params_files[0],1)
-            
+    
+    def _get_probe_times(self,probe_path):
+        times_files = [os.path.join(probe_path,fn)\
+                        for fn in os.listdir(probe_path)\
+                              if 'probe_times' in fn]
+        
+        its_list = [np.loadtxt(fn,skiprows=1,delimiter=',',usecols=0,dtype='i4') for fn in sorted(times_files)]
+
+        registered_its = list(its_list[-1])
+        its_required =[its_list[-1]]
+        for its in its_list[:-1][::-1]:
+            added_its = [it for it in its if it not in registered_its]
+            its_required.append(added_its)
+            registered_its.extend(added_its)
+
+        return its_required[::-1]
             
     def _check_probes(self,probe_params: list[dict]):
         probes_run = []
         for run in probe_params:
-            probes_run.append({k:v for k,v in run.items() if 'probe' in k })
-            
-        for probe in probes_run[1:]:
-           if not np.isclose(probes_run[0]['x'],probe['x']):
-               return False
-           if not np.isclose(probes_run[0]['y'],probe['y']):
-               return False
+            probes_run.append([v for k, v in run.items() if 'probe ' in k ])
+        
+        if len(probes_run) > 1:
+            for probe in probes_run[1:]:
+                if not np.allclose(probes_run[0],probe):
+                    raise RuntimeError("Probe locations are not close")
            
-        return True
-            
+        self.probe_locations = {}
+        for i in range(len(probes_run[0])):
+            self.probe_locations[i+1] = probe_params[0][f'probe {i+1}']
+
     def save_hdf(self,fn,mode,key=None):
         if key is None:
             key = self._get_hdf_key(key)
-            
-        self.meta_data.save_hdf(fn,mode,key=key+'/meta_data')
+
+        hdf_obj = fp.hdfHandler(fn,mode,key=key)
+        self.meta_data.save_hdf(fn,'a',key=key+'/meta_data')
         
         for k,v in self.probe_data.items():
             v.to_hdf(fn,'a',key=key+'/probe %d'%k)        
+            hdf_obj['probe %d'%k].attrs['location'] =self.probe_locations[k]
     
     def _hdf_extract(self,fn,key=None):
         if key is None:
@@ -249,7 +283,10 @@ class line_probes(Common):
         self.meta_data = self._module._meta_class.from_hdf(fn,key=key+'/meta_data')
         
         h5_obj = fp.hdfHandler(fn,'r',key=key)
-        keys = [k for k in h5_obj.keys() if 'probe' in k]
+        keys = sorted([int(k.split()[-1]) for k in h5_obj.keys() if 'probe' in k])
+
         self.probe_data = {}
-        for i,k in enumerate(keys):
-            self.probe_data[i+1] = fp.FlowStructND_time.from_hdf(fn,key=key+'/'+k)
+        self.probe_locations = {}
+        for k in keys:
+            self.probe_data[k] = fp.FlowStructND_time.from_hdf(fn,key=key+'/probe %d'%k)
+            self.probe_locations[k] = h5_obj['probe %d'%k].attrs['location']

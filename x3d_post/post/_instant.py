@@ -337,8 +337,11 @@ class _Inst_base(CommonData,inst_reader,ABC):
         kwargs = update_subplots_kw(kwargs,figsize=figsize)
         fig, ax, axes_output = create_fig_ax_without_squeeze(len(axis_vals),fig=fig,ax=ax,**kwargs)
 
+        p1, p2 = plane
+        c1 = chr(ord(p1)-ord('x') + ord('u'))
+        c2 = chr(ord(p2)-ord('x') + ord('u'))
         for i, val in enumerate(int_vals):
-            fig, ax[i] = self.inst_data.plot_vector(plane,val,time=PhyTime,spacing=spacing,scaling=scaling,
+            fig, ax[i] = self.inst_data.plot_vector((c1,c2),plane,val,time=PhyTime,spacing=spacing,scaling=scaling,
                                                     fig=fig,ax=ax[i],quiver_kw=quiver_kw)
             xlabel = self.Domain.create_label(r"$%s$"%plane[0])
             ylabel = self.Domain.create_label(r"$%s$"%plane[1])
