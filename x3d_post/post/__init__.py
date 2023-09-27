@@ -16,8 +16,8 @@ from ._budget import (x3d_budget_z,
                       x3d_FIK_xzt,
                       x3d_Cf_Renard_z,
                       x3d_Cf_Renard_xz,
-                      x3d_Cf_Renard_xzt
-                      )
+                      x3d_Cf_Renard_xzt,
+                      x3d_pstrain_xz)
 
 from ._instant import (x3d_inst_z,
                        x3d_inst_xz,
@@ -30,7 +30,8 @@ from ._quadrant_a import (x3d_quadrant_z,
 from ._spectra import (x3d_spectra_xz,
                        x3d_spectra_xzt,
                        x3d_spectra_z,
-                       x3d_autocorr_x)
+                       x3d_autocorr_x,
+                       x3d_correlations_xzt)
 
 from ._fluct import (x3d_fluct_z,
                      x3d_fluct_xzt)

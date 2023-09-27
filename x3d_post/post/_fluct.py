@@ -383,7 +383,7 @@ class x3d_fluct_xzt(_fluct_base):
                 
         fluct = np.zeros((len(inst_data.inst_data.index),*inst_data.shape[:]),dtype=fp.rcParams['dtype'])
         if not all(time in avg_data.times for time in inst_data.times):
-            raise RuntimeError("Time not in avg data")
+            raise RuntimeError(f"Times {inst_data.times}  not in avg data")
         
         yindices = self._get_avg_slice(inst_data.inst_data,
                                        avg_data.mean_data)
