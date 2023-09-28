@@ -23,6 +23,7 @@ import json
 import time
 import copy
 from itertools import chain
+from numpy.fft import ifftshift
 pyfftw.config.PLANNER_EFFORT = 'FFTW_ESTIMATE'
 pyfftw.interfaces.cache.enable()
 
@@ -365,8 +366,7 @@ class x3d_spectra_xz(stat_xz_handler, spectra_base):
         data = np.zeros(shape, dtype=np.complex128)
         for i, comp in enumerate(comps):
             data[:self.spectra_data.shape[0]] = self.spectra_data[comp]
-            data[self.spectra_data.shape[0]
-                :] = self.spectra_data[comp][1:-1][::-1]
+            data[self.spectra_data.shape[0]:] = self.spectra_data[comp][1:-1][::-1]
             # l[i] = simps(simps(data,dx=d_kx,axis=2),
             #                    dx=d_kz,axis=0)
             l[i] = np.sum(np.real(data), axis=(0, 2))*d_kz*d_kx
@@ -1025,8 +1025,7 @@ class x3d_spectra_z(stat_z_handler, spectra_base):
 
         for i, comp in enumerate(comps):
             data[:self.spectra_data.shape[0]] = self.spectra_data[comp]
-            data[self.spectra_data.shape[0]
-                :] = self.spectra_data[comp][1:-1][::-1]
+            data[self.spectra_data.shape[0]                 :] = self.spectra_data[comp][1:-1][::-1]
             l[i] = np.sum(np.real(data), axis=0)*d_kz
 
         return fp.FlowStruct2D(self.spectra_data._coorddata,
@@ -1240,15 +1239,18 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                 index1 = fluct.CoordDF.index_calc('y', y)[0]
                 index2 = fluct.CoordDF.index_calc('y', 2-y)[0]
 
-                spectra_corr1 = np.mean(uhat*uhat[:, index1, None], axis=0)
-                spectra_corr2 = np.mean(uhat*uhat[:, index2, None], axis=0)
+                spectra_corr1 = np.mean(
+                    uhat.conj()*uhat[:, index1, None], axis=0)
+                spectra_corr2 = np.mean(
+                    uhat.conj()*uhat[:, index2, None], axis=0)
                 spectra_corr = 0.5*(spectra_corr1 + spectra_corr2[::-1])
-                u_corr[i, j, :, :] = irfft(spectra_corr, axis=1)
+                u_corr[i, j, :, :] = ifftshift(irfft(spectra_corr, axis=1),
+                                               axes=1)
 
         if window_params:
             shape = (len(window_its), len(ylocs),
                      self.NCL[1], self.NCL[0])
-            data = np.zeros(shape, dtype='c16')
+            data = np.zeros(shape, dtype='f8')
             for k, win in enumerate(window_itsc):
                 win_its = [i for i, it in enumerate(its) if it in win]
                 if window_params['method'] == 'uniform':
@@ -1262,8 +1264,8 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
 
         x_coords = self.CoordDF['x']
         dx = 0.5*np.diff(x_coords)[0]
-        deltax = np.linspace(-x_coords[-1]/2-dx,
-                             x_coords[-1]/2-dx, data.shape[-1])
+        deltax = np.linspace(x_coords[-1]/2-dx,
+                             -x_coords[-1]/2-dx, data.shape[-1])
 
         geom = fp.GeomHandler(self.metaDF['itype'])
         CoordDF = fp.coordstruct({'y': self.CoordDF['y'],
