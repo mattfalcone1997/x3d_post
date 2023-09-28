@@ -366,7 +366,8 @@ class x3d_spectra_xz(stat_xz_handler, spectra_base):
         data = np.zeros(shape, dtype=np.complex128)
         for i, comp in enumerate(comps):
             data[:self.spectra_data.shape[0]] = self.spectra_data[comp]
-            data[self.spectra_data.shape[0]:] = self.spectra_data[comp][1:-1][::-1]
+            data[self.spectra_data.shape[0]
+                :] = self.spectra_data[comp][1:-1][::-1]
             # l[i] = simps(simps(data,dx=d_kx,axis=2),
             #                    dx=d_kz,axis=0)
             l[i] = np.sum(np.real(data), axis=(0, 2))*d_kz*d_kx
@@ -1025,7 +1026,7 @@ class x3d_spectra_z(stat_z_handler, spectra_base):
 
         for i, comp in enumerate(comps):
             data[:self.spectra_data.shape[0]] = self.spectra_data[comp]
-            data[self.spectra_data.shape[0]                 :] = self.spectra_data[comp][1:-1][::-1]
+            data[self.spectra_data.shape[0]:] = self.spectra_data[comp][1:-1][::-1]
             l[i] = np.sum(np.real(data), axis=0)*d_kz
 
         return fp.FlowStruct2D(self.spectra_data._coorddata,
@@ -1192,6 +1193,8 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
             window_params = self._get_window_params(path, **window_params)
             window_params['method'] = window_method
 
+            self.avg_data.window(**window_params)
+
         self.corr_data = self._get_spectra_data(
             path, ylocs, comp=comp, its=its, window_params=window_params)
 
@@ -1204,7 +1207,7 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
         if 'window' not in params:
             raise RuntimeError("Windowing not available on this case")
 
-        params.update(win_params)
+        params['window'].update(win_params)
         return params['window']
 
     def _get_spectra_data(self, path, ylocs, comp='u', its=None, window_params=None):
@@ -1233,7 +1236,8 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                                                   avg_data=self.avg_data)
 
             ufluct = fluct.fluct_data[comp]
-            uhat = rfft(ufluct, axis=2, norm='forward')
+            n = ufluct.shape[2]
+            uhat = rfft(ufluct, axis=2)
 
             for j, y in enumerate(ylocs):
                 index1 = fluct.CoordDF.index_calc('y', y)[0]
@@ -1245,7 +1249,7 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                     uhat.conj()*uhat[:, index2, None], axis=0)
                 spectra_corr = 0.5*(spectra_corr1 + spectra_corr2[::-1])
                 u_corr[i, j, :, :] = ifftshift(irfft(spectra_corr, axis=1),
-                                               axes=1)
+                                               axes=1)/n
 
         if window_params:
             shape = (len(window_its), len(ylocs),

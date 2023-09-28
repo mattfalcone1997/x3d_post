@@ -339,16 +339,17 @@ class _AVG_base(CommonData, stathandler_base, ABC):
         Rij = np.array([self.uu_data[PhyTime, comp] for comp in components]).reshape(
             (3, 3, *self.uu_data[PhyTime, 'uu'].shape))
 
-        index = (3, 3, *[1]*self.uu_data._dim)
+        dim = self.uu_data[PhyTime, 'uu'].ndim
+        index = (3, 3, *[1]*dim)
         bij = Rij/Rij.trace() - np.identity(3).reshape(index)/3
 
         # get principle invariants:
 
-        end = ''.join([chr(i+ord('k')) for i in range(self.uu_data._dim)])
+        end = ''.join([chr(i+ord('k')) for i in range(dim)])
         subscript = f'ij{end},ji{end}->{end}'
         data1 = np.sqrt(np.einsum(subscript, bij, bij)/6)
 
-        end = ''.join([chr(i+ord('l')) for i in range(self.uu_data._dim)])
+        end = ''.join([chr(i+ord('l')) for i in range(dim)])
         subscript = f'ij{end},jk{end},ki{end}->{end}'
         data2 = (np.einsum(subscript, bij, bij, bij)/6)**(1/3)
 
@@ -917,32 +918,30 @@ class x3d_avg_z(_AVG_developing, stat_z_handler):
 
         return fig, ax
 
-    def plot_lumley(self, xy_locs, wall_units=True, plot_limits=True, PhyTime=None, fig=None, ax=None, line_kw=None, **kwargs):
+    def plot_lumley(self, yloc, xcoords, wall_units=True, x_ref=0, plot_limits=True, PhyTime=None, fig=None, ax=None, line_kw=None, **kwargs):
 
         fig, ax = create_fig_ax_with_squeeze(fig, ax, **kwargs)
 
         if wall_units:
-
-            xy_indices = [(self.CoordDF.index_calc('x', x),
-                           self.Wall_Coords(PhyTime).index_calc('y', y))
-                          for x, y in xy_indices]
+            yindex = self.Wall_Coords(x_ref, PhyTime).index_calc('y', yloc)[0]
         else:
-            xy_indices = [(self.CoordDF.index_calc('x', x),
-                           self.CoordDF.index_calc('y', y))
-                          for x, y in xy_indices]
+            yindex = self.CoordDF.index_calc('y', yloc)[0]
+
+        x_index = self.CoordDF.index_calc('x', xcoords)
 
         if plot_limits:
             x = np.linspace(0, 1/3, 2)
-            ax.plot(x, x, 'k', linestyle='-', marker='')
+            ax.plot(x, x, 'k', linestyle='-', marker='', lw=0.3)
             x = np.linspace(0, -1/6, 2)
-            ax.plot(x, abs(x), 'k', linestyle='-', marker='')
+            ax.plot(x, abs(x), 'k', linestyle='-', marker='', lw=0.3)
             x = np.linspace(-1/6, 1/3, 100)
-            ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k', linestyle='-', marker='')
+            ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k',
+                    linestyle='-', marker='', lw=0.3)
 
         I2, I32 = self.get_lumley(PhyTime=PhyTime)
-        for x, y in xy_indices:
-            ax.scatter(I32[y, x], I2[y, x], **line_kw)
-
+        ax.cplot(I32[yindex, x_index], I2[yindex, x_index], **line_kw)
+        ax.set_xlabel(r"$\xi$")
+        ax.set_ylabel(r"$\eta$")
         return fig, ax
 
 
@@ -1218,11 +1217,12 @@ class x3d_avg_xz(_AVG_base, stat_xz_handler):
         line_kw = update_line_kw(line_kw)
         if plot_limits:
             x = np.linspace(0, 1/3, 2)
-            ax.plot(x, x, 'k', linestyle='-', marker='')
+            ax.plot(x, x, 'k', linestyle='-', marker='', lw=0.3)
             x = np.linspace(0, -1/6, 2)
-            ax.plot(x, abs(x), 'k', linestyle='-', marker='')
+            ax.plot(x, abs(x), 'k', linestyle='-', marker='', lw=0.3)
             x = np.linspace(-1/6, 1/3, 100)
-            ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k', linestyle='-', marker='')
+            ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k',
+                    linestyle='-', marker='', lw=0.3)
 
         I2, I32 = self.get_lumley(PhyTime=PhyTime)
 
@@ -1655,31 +1655,32 @@ class x3d_avg_xzt(_AVG_developing, stat_xzt_handler, x3d_avg_xz, CommonTemporalD
 
         return fig, ax
 
-    def plot_lumley(self, ty_locs, wall_units=True, plot_limits=True, PhyTime=None, fig=None, ax=None, line_kw=None, **kwargs):
-
+    def plot_lumley(self, yloc, times=None, wall_units=True, plot_limits=True, PhyTime=None, fig=None, ax=None, line_kw=None, **kwargs):
+        times = check_list_vals(times)
         fig, ax = create_fig_ax_with_squeeze(fig, ax, **kwargs)
         if wall_units:
-            ty_indices = [(self._return_index(t),
-                           self.Wall_Coords(PhyTime).index_calc('y', y))
-                          for t, y in ty_indices]
+            yindex = self.Wall_Coords(PhyTime).index_calc('y', yloc)[0]
         else:
-            ty_indices = [(self._return_index(t),
-                           self.CoordDF.index_calc('y', y))
-                          for t, y in ty_indices]
+            yindex = self.CoordDF.index_calc('y', yloc)[0]
+        if times is None:
+            times = self.times
+
+        t_index = [self._return_index(t) for t in times]
 
         if plot_limits:
             x = np.linspace(0, 1/3, 2)
-            ax.plot(x, x, 'k', linestyle='-', marker='')
+            ax.plot(x, x, 'k', linestyle='-', marker='', lw=0.3)
             x = np.linspace(0, -1/6, 2)
-            ax.plot(x, abs(x), 'k', linestyle='-', marker='')
+            ax.plot(x, abs(x), 'k', linestyle='-', marker='', lw=0.3)
             x = np.linspace(-1/6, 1/3, 100)
-            ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k', linestyle='-', marker='')
+            ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k',
+                    linestyle='-', marker='', lw=0.3)
 
-        I2, I32 = self.get_lumley(PhyTime=PhyTime)
-        for t, y in ty_indices:
+        I2, I32 = self.get_lumley(PhyTime=None)
 
-            ax.scatter(I32[y, t], I2[y, t], **line_kw)
-
+        ax.cplot(I32[yindex, t_index], I2[yindex, t_index], **line_kw)
+        ax.set_xlabel(r"$\xi$")
+        ax.set_ylabel(r"$\eta$")
         return fig, ax
 
 
