@@ -333,13 +333,17 @@ class _AVG_base(CommonData, stathandler_base, ABC):
                                          index=index)
         return pp_data
 
-    def get_lumley(self, PhyTime=None):
+    def get_lumley(self, PhyTime=None, coord_slice=None):
 
         components = ['uu', 'uv', 'uw', 'uv', 'vv', 'vw', 'uw', 'vw', 'ww']
         Rij = np.array([self.uu_data[PhyTime, comp] for comp in components]).reshape(
             (3, 3, *self.uu_data[PhyTime, 'uu'].shape))
 
-        dim = self.uu_data[PhyTime, 'uu'].ndim
+        if coord_slice is not None:
+            slicer = (slice(None), slice(None), *coord_slice)
+            Rij = Rij[slicer]
+
+        dim = Rij.ndim - 2
         index = (3, 3, *[1]*dim)
         bij = Rij/Rij.trace() - np.identity(3).reshape(index)/3
 
@@ -938,8 +942,9 @@ class x3d_avg_z(_AVG_developing, stat_z_handler):
             ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k',
                     linestyle='-', marker='', lw=0.3)
 
-        I2, I32 = self.get_lumley(PhyTime=PhyTime)
-        ax.cplot(I32[yindex, x_index], I2[yindex, x_index], **line_kw)
+        I2, I32 = self.get_lumley(PhyTime=PhyTime,
+                                  coord_slice=(yindex, x_index))
+        ax.cplot(I32.flatten(), I2.flatten(), **line_kw)
         ax.set_xlabel(r"$\xi$")
         ax.set_ylabel(r"$\eta$")
         return fig, ax
@@ -1676,9 +1681,10 @@ class x3d_avg_xzt(_AVG_developing, stat_xzt_handler, x3d_avg_xz, CommonTemporalD
             ax.plot(x, np.sqrt(1/27 + 2*x**3), 'k',
                     linestyle='-', marker='', lw=0.3)
 
-        I2, I32 = self.get_lumley(PhyTime=None)
+        I2, I32 = self.get_lumley(PhyTime=None,
+                                  coord_slice=(yindex, t_index))
 
-        ax.cplot(I32[yindex, t_index], I2[yindex, t_index], **line_kw)
+        ax.cplot(I32.flatten(), I2.flatten(), **line_kw)
         ax.set_xlabel(r"$\xi$")
         ax.set_ylabel(r"$\eta$")
         return fig, ax

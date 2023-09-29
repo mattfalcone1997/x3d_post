@@ -355,3 +355,7 @@ class x3d_quadrant_xzt(xp.x3d_quadrant_xzt, temp_accel_base):
 
 class line_probes(xp.line_probes):
     pass
+
+
+class x3d_correlations_xzt(xp.x3d_correlations_xzt, temp_accel_base):
+    pass
