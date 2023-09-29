@@ -1220,11 +1220,13 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                                                  window_params['file'])).squeeze()
             hwidth = window_params.get('hwidth')
             window_itsc = []
+            out_its = []
             for it in window_its:
                 valid_its = list(
                     its[abs(its-it) < hwidth+window_params['dt']//2])
                 if valid_its:
                     window_itsc.append(valid_its)
+                    out_its.append(it)
             its = sorted(set(chain(*window_itsc)))
 
         u_corr = np.zeros(
@@ -1252,7 +1254,7 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                                                axes=1)/n
 
         if window_params:
-            shape = (len(window_its), len(ylocs),
+            shape = (len(out_its), len(ylocs),
                      self.NCL[1], self.NCL[0])
             data = np.zeros(shape, dtype='f8')
             for k, win in enumerate(window_itsc):
@@ -1263,7 +1265,7 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                     raise NotImplementedError("No other window method "
                                               "currently implementsed")
         else:
-            window_its = its
+            out_its = its
             data = u_corr
 
         x_coords = self.CoordDF['x']
@@ -1276,26 +1278,25 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                                   'delta x': deltax})
         coorddata = fp.AxisData(geom, CoordDF, coord_nd=None)
 
-        index = self._get_index(window_its, [f"y={y}" for y in ylocs])
+        index = self._get_index(out_its, [f"y={y}" for y in ylocs])
 
-        shape = (len(window_its)*len(ylocs), self.NCL[1], self.NCL[0])
+        shape = (len(out_its)*len(ylocs), self.NCL[1], self.NCL[0])
         return self._flowstruct_class(coorddata,
                                       data.reshape(shape),
                                       data_layout=('y', 'delta x'),
                                       wall_normal_line='y',
                                       index=index)
 
-    def plot_correlation(self, yloc, time, norm=True, contour_kw=None, fig=None, ax=None):
+    def plot_correlation(self, yloc, time, norm=True, contour_kw=None, fig=None, ax=None, **kwargs):
 
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig, ax=ax, **kwargs)
 
         contour_kw = update_contour_kw(contour_kw)
-        transform = None if not norm else lambda x: x/np.amax(x)
+        transform = None if not norm else lambda x: x/np.nanmax(x)
 
-        fig, qm = self.corr_data.plot_contour(f"y={yloc}",
+        fig, qm = self.corr_data.plot_contour(yloc,
                                               time=time,
-                                              rotate=True,
                                               transform_cdata=transform,
                                               fig=fig, ax=ax,
                                               contour_kw=contour_kw)
