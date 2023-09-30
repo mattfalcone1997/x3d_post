@@ -108,6 +108,19 @@ class temp_accel_base(CommonTemporalData, ABC):
             index = np.argmin(np.abs(times-time_ref))
             return times[index]
 
+    @classmethod
+    def _type_hook(cls, base_object, attr, vals, time_shifts):
+
+        if isinstance(vals[0], meta_x3d):
+            tbs = [v._tb for v in vals]
+            for t in tbs[1:]:
+                if not np.allclose(tbs[0], t):
+                    raise ValueError("Not all times are close")
+            new_tb = tbs[0] + time_shifts[0]
+            vals[0]._tb = new_tb
+
+            setattr(base_object, attr, vals[0])
+
 
 class x3d_inst_xzt(xp.x3d_inst_xzt):
     pass

@@ -1752,6 +1752,7 @@ class Cf_Renard_base(budgetBase):
         self.avg_data = avg_data
         self.budget_data = self._budget_extract(*args, **kwargs)
         self._symbols = {}
+        self._styles = {}
 
     def _get_stat_data(self, avg_data):
         pass

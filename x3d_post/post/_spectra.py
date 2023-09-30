@@ -1184,6 +1184,10 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
     def _spectra_extract(self, path, ylocs, avg_data=None,
                          comp='u', its=None, window_method=None, **window_params):
 
+        if its is None:
+            its = np.array(get_iterations(path),
+                           dtype='i4')
+
         if avg_data is None:
             self.avg_data = self._get_avg_data(path, its=its)
         else:
@@ -1212,12 +1216,10 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
 
     def _get_spectra_data(self, path, ylocs, comp='u', its=None, window_params=None):
 
-        if its is None:
-            its = get_iterations(path)
-        its = np.array(its, dtype='i4')
         if window_params is not None:
             window_its = np.loadtxt(os.path.join(path,
-                                                 window_params['file'])).squeeze()
+                                                 window_params['file']),
+                                    dtype='i4').squeeze()
             hwidth = window_params.get('hwidth')
             window_itsc = []
             out_its = []
