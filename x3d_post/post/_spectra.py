@@ -366,8 +366,7 @@ class x3d_spectra_xz(stat_xz_handler, spectra_base):
         data = np.zeros(shape, dtype=np.complex128)
         for i, comp in enumerate(comps):
             data[:self.spectra_data.shape[0]] = self.spectra_data[comp]
-            data[self.spectra_data.shape[0]
-                :] = self.spectra_data[comp][1:-1][::-1]
+            data[self.spectra_data.shape[0]:] = self.spectra_data[comp][1:-1][::-1]
             # l[i] = simps(simps(data,dx=d_kx,axis=2),
             #                    dx=d_kz,axis=0)
             l[i] = np.sum(np.real(data), axis=(0, 2))*d_kz*d_kx
@@ -1185,8 +1184,8 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
                          comp='u', its=None, window_method=None, **window_params):
 
         if its is None:
-            its = np.array(get_iterations(path),
-                           dtype='i4')
+            its = get_iterations(path)
+        its = np.array(its, dtype='i4')
 
         if avg_data is None:
             self.avg_data = self._get_avg_data(path, its=its)
@@ -1197,7 +1196,10 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
             window_params = self._get_window_params(path, **window_params)
             window_params['method'] = window_method
 
-            self.avg_data.window(**window_params)
+        if window_method == 'uniform':
+            hwidth = window_params['hwidth']*self.metaDF['dt']
+            self.avg_data.window(method='uniform',
+                                 hwidth=hwidth)
 
         self.corr_data = self._get_spectra_data(
             path, ylocs, comp=comp, its=its, window_params=window_params)
