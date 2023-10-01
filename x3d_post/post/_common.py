@@ -9,33 +9,37 @@ from inspect import getmembers
 from functools import wraps
 import copy
 
+
 class classproperty():
-    def __init__(self,func):
+    def __init__(self, func):
         self.f = func
-    def __get__(self,obj,cls):
+
+    def __get__(self, obj, cls):
         return self.f(cls)
 
+
 class _classfinder:
-    def __init__(self,cls):
+    def __init__(self, cls):
         self._cls = cls
-    
-    def __getattr__(self,attr):
+
+    def __getattr__(self, attr):
         mro = self._cls.mro()
-        
+
         for c in mro:
             module = sys.modules[c.__module__]
-            if hasattr(c,attr):
-                return getattr(self._cls,attr)
-            elif hasattr(module, attr) and hasattr(c,'_module'):
+            if hasattr(c, attr):
+                return getattr(self._cls, attr)
+            elif hasattr(module, attr) and hasattr(c, '_module'):
                 if c in mro[1:]:
                     warn_msg = (f"Attribute {attr} being inherited "
                                 f"from parent class ({c.__module__}.{c.__name__})"
-                                 ". This behavior may be undesired")
+                                ". This behavior may be undesired")
                     warnings.warn(warn_msg)
-                    
-                return getattr(module,attr)
+
+                return getattr(module, attr)
         msg = f"Attribute {attr} was not found for class {mro[0].__name__} in module {mro[0].__module__}"
-        raise ModuleNotFoundError(msg) 
+        raise ModuleNotFoundError(msg)
+
 
 class Common(ABC):
 
@@ -43,11 +47,12 @@ class Common(ABC):
     def _module(cls):
         return _classfinder(cls)
 
-    def _get_hdf_key(self,key):
+    def _get_hdf_key(self, key):
         if key is None:
             return self.__class__.__name__
         else:
             return key
+
 
 class CommonData(Common):
     @property
@@ -71,30 +76,32 @@ class CommonData(Common):
         pass
 
     def _flowstructs(self) -> dict[fp.FlowStruct1D]:
-        members = getmembers(self,lambda x: isinstance(x,fp.FlowStructND))
+        members = getmembers(self, lambda x: isinstance(x, fp.FlowStructND))
         return dict(members)
-    
+
     def copy(self):
         return copy.deepcopy(self)
 
+
 def require_override(func):
-    
+
     @wraps(func)
-    def _return_func(*args,**kwargs):
-       msg = (f"Method {__name__} must be overriden to be used. There is no "
-              "need to override it if this function is not called")
-       raise NotImplementedError(msg)
-   
+    def _return_func(*args, **kwargs):
+        msg = (f"Method {__name__} must be overriden to be used. There is no "
+               "need to override it if this function is not called")
+        raise NotImplementedError(msg)
+
     return _return_func
+
 
 class CommonTemporalData(CommonData):
     @classmethod
-    def phase_average(cls,*objects,items=None):
-        if not all(type(x)==cls for x in objects):
+    def phase_average(cls, *objects, items=None):
+        if not all(type(x) == cls for x in objects):
             msg = (f"All objects to be averaged must be of type {cls.__name__}"
-                    f" not {[type(x).__name__ for x in objects]}")
+                   f" not {[type(x).__name__ for x in objects]}")
             raise TypeError(msg)
-        
+
         if items is not None:
             if len(items) != len(objects):
                 msg = ("If items is present, it must be the same"
@@ -107,113 +114,112 @@ class CommonTemporalData(CommonData):
         base_object = objects[0].copy()
         object_attrs = base_object.__dict__.keys()
         time_shifts = [x._time_shift for x in objects]
-        
+
         for attr in object_attrs:
-            vals = [getattr(ob,attr) for ob in objects]
+            vals = [getattr(ob, attr) for ob in objects]
             val_type = type(vals[0])
-            
+
             if not all(type(val) == val_type for val in vals):
                 msg = ("Not all attributes of object "
                        "to be phased averaged are of the same type")
                 raise TypeError(msg)
-            
-            if issubclass(val_type,CommonTemporalData):
+
+            if issubclass(val_type, CommonTemporalData):
                 setattr(base_object,
                         attr,
                         val_type.phase_average(*vals,
                                                items=items))
-            elif issubclass(val_type,fp.FlowStructND):
-                    
-                vals = [val.copy().shift_times(shift) \
-                            for val,shift in zip(vals,time_shifts)]
-                
+            elif issubclass(val_type, fp.FlowStructND):
+
+                vals = [val.copy().shift_times(shift)
+                        for val, shift in zip(vals, time_shifts)]
+
                 times_list = [val.times for val in vals]
 
-                vals = base_object._handle_time_remove(vals,times_list)
+                vals = base_object._handle_time_remove(vals, times_list)
                 coeffs = items/np.sum(items)
                 phase_val = sum(coeffs*vals)
 
-                setattr(base_object,attr,phase_val)
-                
+                setattr(base_object, attr, phase_val)
+
             else:
-                cls._type_hook(base_object,attr,vals,time_shifts)
+                cls._type_hook(base_object, attr, vals, time_shifts)
 
         return base_object
-    
+
     @classmethod
-    def _type_hook(cls,base_object,attr,vals,time_shifts):
+    def _type_hook(cls, base_object, attr, vals, time_shifts):
         pass
-    
+
     @abstractproperty
     def times(self):
         pass
-    
-    def set_times(self,value):
-        for  v in self._flowstructs().values():
+
+    def set_times(self, value):
+        for v in self._flowstructs().values():
             if not len(value) == len(v.times):
                 raise ValueError("The length of the new times"
-                                " must be the same as the existing one")
+                                 " must be the same as the existing one")
             v.times = value
-            
-    def _del_times(self,times):
-        for  v in self._flowstructs().values():
+
+    def _del_times(self, times):
+        for v in self._flowstructs().values():
             for time in times:
                 v.remove_time(time)
-                
-    def shift_times(self,time):
+
+    def shift_times(self, time):
         for v in self._flowstructs().values():
             v.shift_times(time)
 
-    def _handle_time_remove(self,fstructs: list[fp.FlowStructND],
-                                times_list: list):
-        
+    def _handle_time_remove(self, fstructs: list[fp.FlowStructND],
+                            times_list: list):
+
         for i, fstruct in enumerate(fstructs):
             intersect_times = self._get_intersect(times_list)
 
             for time in fstruct.times:
                 if time not in intersect_times:
                     fstruct.remove_time(time)
-                
+
         return fstructs
-    
+
     @classmethod
-    def _get_its_phase(cls,paths,its=None) -> list[int]:
+    def _get_its_phase(cls, paths, its=None) -> list[int]:
         it_shifts = [cls._get_its_shift(path) for path in paths]
 
         if its is None:
-            
-            its_list = [ np.array(get_iterations(path,statistics=True)) + shift\
-                        for shift, path in zip(it_shifts,paths)]
-            
+
+            its_list = [np.array(get_iterations(path, statistics=True)) + shift
+                        for shift, path in zip(it_shifts, paths)]
+
             its_shifted = sorted(cls._get_intersect(its_list))
         else:
             its_shifted = sorted(its)
-        print(its_shifted)
         return [np.array(its_shifted) - shift for shift in it_shifts]
 
     @classmethod
-    def _get_intersect(cls,its_list):
+    def _get_intersect(cls, its_list):
         base_set = set(its_list[0])
         for its in its_list[1:]:
             base_set.intersection_update(its)
-        
+
         return list(base_set)
-            
+
     @require_override
     def _time_shift(self):
         pass
-    
+
     @require_override
-    def _get_its_shift(cls,path) -> int:
+    def _get_its_shift(cls, path) -> int:
         pass
-    
-    def _test_times_shift(self,path):
-        
+
+    def _test_times_shift(self, path):
+
         time_shift1 = self._get_its_shift(path)*self.metaDF['dt']
         time_shift2 = self._time_shift
-        
+
         if time_shift1 != time_shift2:
             msg = ("methods _get_times_shift and"
                    " _time_shift must return the same value."
                    f" Current_values: {time_shift1} {time_shift2}")
-            raise RuntimeError(msg)    
+            raise RuntimeError(msg)

@@ -108,19 +108,6 @@ class temp_accel_base(CommonTemporalData, ABC):
             index = np.argmin(np.abs(times-time_ref))
             return times[index]
 
-    @classmethod
-    def _type_hook(cls, base_object, attr, vals, time_shifts):
-
-        if isinstance(vals[0], meta_x3d):
-            tbs = [v._tb for v in vals]
-            for t in tbs[1:]:
-                if not np.allclose(tbs[0], t):
-                    raise ValueError("Not all times are close")
-            new_tb = tbs[0] + time_shifts[0]
-            vals[0]._tb = new_tb
-
-            setattr(base_object, attr, vals[0])
-
 
 class x3d_inst_xzt(xp.x3d_inst_xzt):
     pass
@@ -139,15 +126,31 @@ _fluct_xzt_class = x3d_fluct_xzt
 class x3d_avg_xzt(xp.x3d_avg_xzt, temp_accel_base):
     @classmethod
     def _type_hook(cls, base_object, attr, vals, time_shifts):
-        if attr == '_meta_data' and hasattr(vals[0], 'bf'):
-            bfs = [val.bf.shift_times(shift)
-                   for val, shift in zip(vals, time_shifts)]
+        super()._type_hook(base_object, attr, vals, time_shifts)
 
-            times_list = [bf.times for bf in bfs]
+        if attr == '_meta_data':
+            if hasattr(vals[0], 'bf'):
+                bfs = [val.bf.shift_times(shift)
+                       for val, shift in zip(vals, time_shifts)]
 
-            bfs = base_object._handle_time_remove(bfs, times_list)
-            vals[0].bf = bfs[0]
+                times_list = [bf.times for bf in bfs]
+
+                bfs = base_object._handle_time_remove(bfs, times_list)
+                vals[0].bf = bfs[0]
+                setattr(base_object, attr, vals[0])
+            elif hasattr(vals[0], '_tb'):
+                tbs = [v._tb for v in vals]
+                for t in tbs[1:]:
+                    if not np.allclose(tbs[0], t):
+                        raise ValueError("Not all times are close")
+                new_tb = tbs[0] + time_shifts[0]
+                vals[0]._tb = new_tb
+
             setattr(base_object, attr, vals[0])
+
+    def shift_times(self, time):
+        super().shift_times(time)
+        self._meta_data._tb += time
 
     def conv_distance_calc(self, t0=None):
 
