@@ -494,7 +494,7 @@ class x3d_avg_z(_AVG_developing, stat_z_handler):
         indices = self.Wall_Coords(axis_val, PhyTime).index_calc(comp, coords)
         return self.CoordDF[comp][indices]
 
-    def int_thickness_calc(self, PhyTime=None):
+    def int_thickness_calc(self, PhyTime=None, *arg, **kwargs):
         """
         Calculates the integral thicknesses and shape factor 
 
@@ -514,7 +514,7 @@ class x3d_avg_z(_AVG_developing, stat_z_handler):
         """
 
         PhyTime = self.check_PhyTime(PhyTime)
-        return self._int_thickness_calc(PhyTime)
+        return self._int_thickness_calc(PhyTime, *arg, **kwargs)
 
     def wall_unit_calc(self, PhyTime=None):
 

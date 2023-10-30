@@ -1152,11 +1152,11 @@ class x3d_pstrain_xz(_pstrain_base, stat_xz_handler):
 
 
 class momentum_balance_base(budgetBase):
-    def _budget_init(self, comp, avg_data):
+    def _budget_init(self, comp, avg_data, *args, **kwargs):
 
         self._get_stat_data(avg_data)
 
-        self.budget_data = self._budget_extract(comp)
+        self.budget_data = self._budget_extract(comp, *args, **kwargs)
 
         self._del_stat_data()
 

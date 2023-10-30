@@ -17,8 +17,25 @@ from numbers import Number
 
 class x3d_avg_z(xp.x3d_avg_z):
     y_limit = None
+    delta_buf = 5
 
-    def _int_thickness_calc(self, PhyTime, y_limit=None, U0=None, xindex=None):
+    def _int_thickness_calc(self, PhyTime, y_limit=None, delta=False, U0=None, xindex=None):
+        if delta:
+            blayer = self.blayer_thickness_calc(dynamic=True)
+            disp = np.zeros_like(blayer)
+            theta = np.zeros_like(blayer)
+            ycoords = self.CoordDF['y']
+            ylimits = np.array([ycoords[self.CoordDF.index_calc('y', d)[0]]
+                                for d in blayer])
+
+            for i, y in enumerate(ylimits):
+                lim = self.CoordDF.index_calc('y', blayer[i]+self.delta_buf)[0]
+                U0 = self.mean_data['u'][lim, i]
+                disp[i], theta[i], _ = self._int_thickness_calc(
+                    PhyTime, y_limit=y, xindex=i, U0=U0)
+            H = disp/theta
+            return disp, theta, H
+
         if self.y_limit is None and y_limit is None:
             index = -1
         elif self.y_limit is None:
@@ -27,7 +44,10 @@ class x3d_avg_z(xp.x3d_avg_z):
             index = self.CoordDF.index_calc('y', self.y_limit)[0]
 
         if U0 is None:
-            U0 = self.mean_data[PhyTime, 'u'][index, np.newaxis]
+            if xindex is not None:
+                U0 = self.mean_data[PhyTime, 'u'][index, xindex]
+            else:
+                U0 = self.mean_data[PhyTime, 'u'][index, None]
 
         if xindex is None:
             U_mean = self.mean_data[PhyTime, 'u'].copy()[:index, slice(None)]
@@ -134,6 +154,65 @@ class x3d_avg_z(xp.x3d_avg_z):
 
         return fig, ax
 
+    def plot_shape_factor(self, PhyTime=None, delta=False, fig=None, ax=None, line_kw=None, **kwargs):
+        PhyTime = self.check_PhyTime(PhyTime)
+
+        _, _, shape_factor = self.int_thickness_calc(PhyTime, delta=delta)
+
+        kwargs = update_subplots_kw(kwargs, figsize=[7, 5])
+        fig, ax = create_fig_ax_with_squeeze(fig, ax, **kwargs)
+
+        x_coords = self.mean_data.CoordDF['x']
+        line_kw = update_line_kw(line_kw, label=r"$H$")
+        ax.cplot(x_coords, shape_factor, **line_kw)
+
+        xlabel = self.Domain.create_label(r'$x$')
+        ax.set_xlabel(xlabel)
+
+        ax.set_ylabel(r"$H$")
+
+        return fig, ax
+
+    def plot_mom_thickness(self, PhyTime=None, delta=False, fig=None, ax=None, line_kw=None, **kwargs):
+        PhyTime = self.check_PhyTime(PhyTime)
+        _, theta, _ = self.int_thickness_calc(PhyTime, delta=delta)
+
+        kwargs = update_subplots_kw(kwargs, figsize=[7, 5])
+        fig, ax = create_fig_ax_with_squeeze(fig, ax, **kwargs)
+
+        x_coords = self.mean_data.CoordDF['x']
+
+        line_kw = update_line_kw(line_kw, label=r"$\theta$")
+        ax.cplot(x_coords, theta, **line_kw)
+
+        xlabel = self.Domain.create_label(r'$x$')
+        ax.set_xlabel(xlabel)
+
+        ax.set_ylabel(r"$\theta$")
+        fig.tight_layout()
+
+        return fig, ax
+
+    def plot_disp_thickness(self, PhyTime=None, delta=False, fig=None, ax=None, line_kw=None, **kwargs):
+        PhyTime = self.check_PhyTime(PhyTime)
+        delta, _, _ = self.int_thickness_calc(PhyTime, delta=delta)
+
+        kwargs = update_subplots_kw(kwargs, figsize=[7, 5])
+        fig, ax = create_fig_ax_with_squeeze(fig, ax, **kwargs)
+
+        x_coords = self.mean_data.CoordDF['x']
+
+        line_kw = update_line_kw(line_kw, label=r"$\delta^*$")
+        ax.cplot(x_coords, delta, **line_kw)
+
+        xlabel = self.Domain.create_label(r'$x$')
+        ax.set_xlabel(xlabel)
+
+        ax.set_ylabel(r"$\delta^*$")
+        fig.tight_layout()
+
+        return fig, ax
+
     def _delta_classic_calc(self, PhyTime, threshold='99', dynamic=True):
         u_mean = self.mean_data[PhyTime, 'u']
         y_coords = self.CoordDF['y']
@@ -154,8 +233,11 @@ class x3d_avg_z(xp.x3d_avg_z):
             delta99[i] = int(u_99)
         if dynamic:
             for i in range(u_mean.shape[-1]):
+                ylimit = min(delta99[i]+self.delta_buf, self.y_limit) if self.y_limit is not None \
+                    else delta99[i]+self.delta_buf
+
                 index = self.CoordDF.index_calc(
-                    'y', min(delta99[i]+5, self.y_limit))[0]
+                    'y', ylimit)[0]
                 U0 = self.mean_data[PhyTime, 'u'][index, :]
                 u_99 = thresh*U0[i]
                 int = interp1d(u_mean[:index, i], y_coords[:index])
@@ -207,15 +289,31 @@ class x3d_avg_z(xp.x3d_avg_z):
 
         return tau_star
 
-    def _velo_scale_calc(self, PhyTime=None):
+    def U_infty_calc(self, PhyTime=None, y_ref=None):
+        if y_ref is not None:
+            index = self.CoordDF.index_calc('y', y_ref)[0]
+        else:
+            index = -1
         PhyTime = self.check_PhyTime(PhyTime)
-        return self.mean_data[PhyTime, 'u'][-1, :].copy()
+        return self.mean_data[PhyTime, 'u'][index, :].copy()
 
-    U_infty_calc = xp.x3d_avg_z.bulk_velo_calc
+    _velo_scale_calc = U_infty_calc
 
-    def plot_U_infty(self, *args, **kwargs):
-        fig, ax = super().plot_bulk_velocity(*args, **kwargs)
+    def plot_U_infty(self, PhyTime=None, y_ref=None, fig=None, ax=None, line_kw=None, **kwargs):
+        bulk_velo = self.U_infty_calc(PhyTime, y_ref=y_ref)
+
+        kwargs = update_subplots_kw(kwargs, figsize=[7, 5])
+        fig, ax = create_fig_ax_with_squeeze(fig, ax, **kwargs)
+
+        x_coords = self.mean_data.CoordDF['x']
+        line_kw = update_line_kw(line_kw, label=r"$U_{\infty}$")
+
+        ax.cplot(x_coords, bulk_velo, **line_kw)
         ax.set_ylabel(r"$U_\infty$")
+
+        x_label = self.Domain.create_label(r"$x$")
+        ax.set_xlabel(x_label)
+
         return fig, ax
 
     def _y_plus_calc(self, PhyTime):
@@ -237,11 +335,7 @@ class x3d_avg_z(xp.x3d_avg_z):
 
         PhyTime = self.check_PhyTime(PhyTime)
 
-        if y_ref is None:
-            U_infty = self._velo_scale_calc(PhyTime)
-        else:
-            U_infty = self.mean_data.slice[y_ref, :]['u']
-
+        U_infty = self.U_infty_calc(PhyTime=PhyTime, y_ref=y_ref)
         U_infty_grad = np.gradient(U_infty, self.mean_data.CoordDF['x'])
 
         re = self.metaDF['re']
