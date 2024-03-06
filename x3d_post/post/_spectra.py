@@ -902,16 +902,24 @@ class x3d_spectra_z(stat_z_handler, spectra_base):
                                       wall_normal_line='y',
                                       index=index)
 
-    def plot_spectra_z(self, comp, x_val, wavelength=False, premultiply=True, contour_kw=None, time=None, fig=None, ax=None, **kwargs):
+    def plot_spectra_z(self, comp, x_val, wavelength=False, premultiply=True,
+                       contour_kw=None, time=None,
+                       transform_spectra=None,
+                       fig=None, ax=None, **kwargs):
 
         kwargs = update_subplots_kw(kwargs)
         fig, ax = create_fig_ax_with_squeeze(fig=fig, ax=ax, **kwargs)
 
         contour_kw = update_contour_kw(contour_kw)
 
-        k_z = self.spectra_data.CoordDF['k_z'][:, None]
+        if transform_spectra is None:
+            transform_spectra = lambda x: x
+
+        k_z = self.spectra_data.CoordDF['k_z'][:, None]*self.CoordDF['z'].max()
         x_transform = (lambda x: 2*np.pi/(x+x[1])) if wavelength else None
-        c_transform = (lambda x: np.real(x*(k_z))) if premultiply else np.real
+        c_transform = (lambda x: np.real(transform_spectra(x)*(k_z))) \
+                        if premultiply \
+                        else (lambda x: np.real(transform_spectra(x)))
 
         fig, qm = self.spectra_data.slice[:, :, x_val].plot_contour(comp,
                                                                     rotate=True,
@@ -1195,7 +1203,9 @@ class x3d_correlations_xzt(spectra_base, CommonTemporalData):
         if window_method is not None:
             window_params = self._get_window_params(path, **window_params)
             window_params['method'] = window_method
-
+        else:
+            window_params = None
+            
         if window_method == 'uniform':
             hwidth = window_params['hwidth']*self.metaDF['dt']
             self.avg_data.window(method='uniform',

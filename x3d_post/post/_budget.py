@@ -465,6 +465,18 @@ class ReynoldsBudget_base(stathandler_base, ABC):
 _avg_z_class = x3d_avg_z
 
 
+class kBudget_base(ReynoldsBudget_base):
+    def _budget_init(self, it, path, it0=None):
+        super()._budget_init(None, it, path, it0=None)
+
+    def _budget_extract(self, comp):
+        uu_budget = super()._budget_extract('uu')
+        vv_budget = super()._budget_extract('vv')
+        ww_budget = super()._budget_extract('ww')
+
+        return 0.5*(uu_budget + vv_budget + ww_budget)
+
+
 class x3d_budget_z(ReynoldsBudget_base, budgetBase, stat_z_handler):
 
     @classproperty
@@ -992,6 +1004,38 @@ class x3d_budget_xzt(stat_xzt_handler, budget_xzt_base, x3d_budget_xz):
         ax.set_xlabel(r"$%s$" % time_label)
 
         return fig, ax
+
+
+class x3d_k_budget_z(kBudget_base, x3d_budget_z):
+    pass
+
+
+class x3d_k_budget_xz(kBudget_base, x3d_budget_xz):
+    pass
+
+
+class x3d_k_budget_xzt(kBudget_base, x3d_budget_xzt):
+    @classmethod
+    def from_phase_average(cls, paths, its=None, *args, **kwargs):
+        its_list = cls._get_its_phase(paths, its=its)
+        avg_list = []
+        for path, its in zip(paths, its_list):
+            avg = cls(path, its=its, *args, **kwargs)
+
+            avg._test_times_shift(path)
+            avg_list.append(avg)
+
+        return cls.phase_average(*avg_list)
+
+    def _budget_init(self, path, its=None):
+
+        self.avg_data = self._get_avg_data(path, its=its)
+
+        self._get_stat_data(its, path)
+
+        self.budget_data = self._budget_extract(None)
+
+        self._del_stat_data()
 
 
 class _pstrain_base(CommonData, stathandler_base):

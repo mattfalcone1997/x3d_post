@@ -223,8 +223,12 @@ class line_probes(Common):
                                if 'probe_info' in fn])
 
         self.meta_data = self._module._meta_class(path)
-        probe_params = [json.loads(open(os.path.join(probe_path, f), 'r', encoding='ascii').read())
-                        for f in params_files]
+        try:
+            probe_params = [json.loads(open(os.path.join(probe_path, f), 'r', encoding='ascii').read())
+                            for f in params_files]
+        except UnicodeDecodeError:
+            probe_params = [json.loads(open(os.path.join(probe_path, f), 'r').read())
+                            for f in params_files]
         self._check_probes(probe_params)
 
         if len(params_files) > 1:

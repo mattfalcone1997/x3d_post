@@ -17,6 +17,8 @@ import matplotlib as mpl
 import logging
 from ._average import x3d_avg_z, x3d_avg_xz, x3d_avg_xzt
 from numba import njit, prange
+from numbers import Number
+
 _avg_z_class = x3d_avg_z
 _avg_xz_class =x3d_avg_xz
 _avg_xzt_class = x3d_avg_xzt
@@ -24,13 +26,106 @@ _avg_xzt_class = x3d_avg_xzt
 from ._meta import meta_x3d
 _meta_class=meta_x3d
 
-try:
-    import cupy as cnpy
-    _cupy_avail = True
-except:
-    pass
-
 logger = logging.getLogger(__name__)
+
+@njit(cache=True)
+def _roots_cubic(a: Number, b: Number, c: Number, d: Number):
+    delta0 = np.complex128(b*b - 3.*a*c)
+    delta1 = np.complex128(2.*b*b*b -9*a*b*c + 27*a*a*d)
+
+    C = (0.5*(delta1 + np.sqrt(delta1*delta1 - 4*delta0**3)))**(1/3)
+    
+    if abs(C) < 1e-8:
+        C = 0.5*(delta1 - np.sqrt(delta1*delta1 - 4*delta0**3))
+    
+    
+    cbr1 = 0.5*complex(-1.,3**(0.5))
+    cbr2 = cbr1*cbr1
+    
+    if abs(delta0) < 1e-8 and abs(delta1)<1e-8:
+        delta_divC1 = 0.
+        delta_divC2 = 0.
+        delta_divC3 = 0.
+    else:
+        delta_divC1 = delta0/C
+        delta_divC2 = delta0/(C*cbr1)
+        delta_divC3 = delta0/(C*cbr2)
+        
+    x1 = -(b + C      + delta_divC1) / (3.*a)
+    x2 = -(b + cbr1*C + delta_divC2) / (3.*a)
+    x3 = -(b + cbr2*C + delta_divC3) / (3.*a)
+    
+    return x1, x2, x3
+
+@njit(cache=True)
+def _det_calc33(A: np.ndarray):
+    a = A[0,0]*(A[2,2]*A[1,1] - A[1,2]*A[2,1])
+    b = - A[0,1]*(A[1,0]*A[2,2] - A[1,2]*A[2,0])
+    c = A[0,2]*(A[1,0]*A[2,1] - A[2,0]*A[1,1])
+    return a + b + c
+
+@njit(cache=True)
+def _matmul33(A: np.ndarray, B: np.ndarray):
+    mat = np.zeros((3,3))
+    for i in range(3):
+        for j in range(3):
+            mat[j,0] += A[j,i]*B[i,0]
+            mat[j,1] += A[j,i]*B[i,1]
+            mat[j,2] += A[j,i]*B[i,2]
+                
+    return mat
+
+@njit(parallel=True, cache=True)
+def _lambda_ci_int(A: np.ndarray):
+    lambda_ci = np.zeros(A.shape[0])
+    for i in prange(A.shape[0]):
+        R = -_det_calc33(A[i])
+        DD = _matmul33(A[i], A[i])
+        Q = -0.5*(DD[0,0] + DD[1,1] + DD[2,2])
+
+        l1, l2, l3 = _roots_cubic(1,0,Q, R)
+
+        lambda_ci[i] = 0.5*(abs(l1.imag) + abs(l2.imag) + abs(l3.imag))
+    return lambda_ci
+
+@njit(cache=True)
+def _get_eig2_33(A):
+
+    p1 = A[0,1]*A[0,1] + A[0,2]*A[0,2] + A[1,2]*A[1,2] 
+    q = (A[0,0] + A[1,1] + A[2,2])/3.
+    
+    p2 = (A[0,0]-q)*(A[0,0]-q) + (A[1,1]-q)*(A[1,1]-q) + (A[2,2]-q)*(A[2,2]-q)
+
+    p = np.sqrt((p2 + 2.*p1)/6.)
+
+    u_mat = A[:,:]/p
+
+    u_mat[0,0] -= q/p
+    u_mat[1,1] -= q/p
+    u_mat[2,2] -= q/p
+
+    det_b = _det_calc33(u_mat)
+
+    phi= np.arccos(0.5*det_b)/3
+    eig1 = q + 2*p*np.cos(phi)
+    eig3 = q + 2*p*np.cos(phi + 2*np.pi/3)
+    return 3*q - eig1 - eig3
+    
+@njit(parallel=True, cache=True)
+def _lambda2_core(velo_grad):
+    eig2 = np.zeros(velo_grad.shape[0])
+    for i in prange(velo_grad.shape[0]):
+        S = np.zeros((3,3))
+        O = np.zeros((3,3))
+        for j in range(3):
+            for k in range(3):
+                S[j,k] = 0.5*(velo_grad[i,j,k] + velo_grad[i,k,j]) 
+                O[j,k] = 0.5*(velo_grad[i,j,k] - velo_grad[i,k,j]) 
+
+        S2O2 = _matmul33(S,S) + _matmul33(O,O)
+        eig2[i] = _get_eig2_33(S2O2)
+
+    return eig2
 
 class _Inst_base(CommonData,inst_reader,ABC):
     """
@@ -387,32 +482,19 @@ class _Inst_base(CommonData,inst_reader,ABC):
         coord_list = ['x','y','z']
         
         
-        velo_grad = np.zeros((*self.shape,9))
-        comp_iter = itertools.product(velo_list,coord_list)
+        shape1 = (*self.shape,3,3)
+        velo_grad = np.zeros(shape1)
         
-        for i, (u, x) in enumerate(comp_iter):
+        for i, u in enumerate(velo_list):
             velo_field = self.inst_data[PhyTime,u]
+            for j, x in enumerate(coord_list):
 
-            velo_grad[:,:,:,i] = fp.Grad_calc(self.inst_data.CoordDF,velo_field,x)
+                velo_grad[:,:,:,i, j] = fp.Grad_calc(self.inst_data.CoordDF,velo_field,x)
         
-        velo_grad = velo_grad.reshape((*self.inst_data.shape,3,3))
-        velo_grad_T = np.einsum('ijklm -> ijkml',velo_grad)
-        strain_rate = 0.5*( velo_grad + velo_grad_T)
+        shape2 = (np.prod(self.inst_data.shape),3,3)
+        velo_grad = velo_grad.reshape(shape2)
         
-        rot_rate = 0.5*(velo_grad - velo_grad_T)
-
-        del velo_field; del velo_grad; del velo_grad_T
-        
-        S2_Omega2 = np.matmul(strain_rate,strain_rate) + np.matmul(rot_rate,rot_rate)
-        del strain_rate ; del rot_rate
-
-        if fp.rcParams['use_cupy'] and _cupy_avail:
-            S2_Omega2_eigvals, e_vecs = cnpy.linalg.eigh(S2_Omega2)
-            del e_vecs; del S2_Omega2
-            lambda2 = cnpy.sort(S2_Omega2_eigvals,axis=3)[:,:,:,1].get()
-            del S2_Omega2_eigvals
-        else:
-            lambda2 = _compute_eig2(S2_Omega2)        
+        lambda2 = _lambda2_core(velo_grad).reshape(self.shape)
         
         return fp.FlowStruct3D(self.inst_data._coorddata,{(PhyTime,'lambda_2'):lambda2})
 
@@ -629,6 +711,32 @@ class _Inst_base(CommonData,inst_reader,ABC):
             return fig, ax[0]
         else:
             return fig, ax
+
+    def lambda_ci_calc(self,PhyTime=None):
+        PhyTime = self.check_PhyTime(PhyTime)
+
+        #Calculating strain rate tensor
+        velo_list = ['u','v','w']
+        coord_list = ['x','y','z']
+                
+        D = np.zeros((*self.shape,3,3))
+
+        for i,velo in enumerate(velo_list):
+            velo_field = self.inst_data[PhyTime,velo]
+            for j,coord in enumerate(coord_list):
+                D[:,:,:,i,j] = fp.Grad_calc(self.inst_data.CoordDF,velo_field,coord)
+
+        del velo_field
+
+        size = np.prod(D.shape[:3])
+        shape = (size,3, 3)
+
+        lambda_ci =  _lambda_ci_int(D.reshape(shape)).reshape(self.inst_data.shape)
+
+        return fp.FlowStruct3D(self.inst_data._coorddata,
+                               {(PhyTime,'lambda_ci') : lambda_ci})
+
+
 
     def plot_entrophy(self):
         pass
